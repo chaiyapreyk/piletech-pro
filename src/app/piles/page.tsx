@@ -1,0 +1,184 @@
+import { prisma } from '@/lib/db';
+import Link from 'next/link';
+import { HardHat, ShieldCheck, CheckCircle2, AlertCircle, Clock, Plus, ChevronRight } from 'lucide-react';
+
+export const dynamic = 'force-dynamic';
+
+export default async function PilesListPage() {
+  const piles = await prisma.pile.findMany({
+    include: {
+      criteria: true,
+      drivingRecord: true,
+      qcInspection: true,
+    },
+    orderBy: {
+      pileNo: 'asc',
+    },
+  });
+
+  return (
+    <main className="space-y-6 pb-12">
+      {/* Header */}
+      <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-5 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+        <div>
+          <span className="text-xs font-bold text-amber-600 uppercase tracking-wider">
+            Site Management
+          </span>
+          <h1 className="text-2xl font-black text-slate-800">
+            รายการเสาเข็มในโครงการ (Piles Register)
+          </h1>
+          <p className="text-xs text-slate-500 mt-1">
+            บันทึกการตอก, ตรวจสอบ Last 10 Blows, และบันทึกผลตรวจสอบ QC รายต้น
+          </p>
+        </div>
+
+        <div className="flex items-center gap-2">
+          <Link
+            href="/calculator"
+            className="text-xs font-bold bg-slate-100 hover:bg-slate-200 text-slate-700 px-3.5 py-2 rounded-lg transition"
+          >
+            คำนวณสูตร Hiley
+          </Link>
+        </div>
+      </div>
+
+      {/* Piles Table / Card List */}
+      <div className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden">
+        <div className="overflow-x-auto">
+          <table className="w-full text-left text-xs border-collapse">
+            <thead>
+              <tr className="bg-slate-50 border-b border-slate-200 text-slate-600">
+                <th className="p-3.5 font-bold">รหัสเสาเข็ม (Pile No.)</th>
+                <th className="p-3.5 font-bold">Grid Line</th>
+                <th className="p-3.5 font-bold">ประเภทเสาเข็ม</th>
+                <th className="p-3.5 font-bold text-center">ความลึก (Depth)</th>
+                <th className="p-3.5 font-bold text-center">อัตรา Blows (m / ft)</th>
+                <th className="p-3.5 font-bold text-center">สถานะการตอก</th>
+                <th className="p-3.5 font-bold text-center">Last 10 Blows</th>
+                <th className="p-3.5 font-bold text-center">QA/QC As-Built</th>
+                <th className="p-3.5 font-bold text-right">ดำเนินการ (Actions)</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-slate-100">
+              {piles.map((pile) => {
+                const isDriven = pile.drivingRecord !== null;
+                const isSetPassed = pile.drivingRecord?.isSetPassed;
+                const qcStatus = pile.qcInspection?.deviationStatus;
+                const drivenM = pile.drivingRecord?.drivenLengthM;
+                const drivenFt = drivenM ? (drivenM * 3.28084).toFixed(1) : null;
+                
+                // Parse blows array if available to calculate average blows
+                let avgBlowsM = 0;
+                let avgBlowsFt = 0;
+                if (pile.drivingRecord?.penetrationBlows) {
+                  try {
+                    const arr: number[] = JSON.parse(pile.drivingRecord.penetrationBlows);
+                    if (arr.length > 0) {
+                      avgBlowsM = Math.round(arr.reduce((a, b) => a + b, 0) / arr.length);
+                      avgBlowsFt = Math.round(avgBlowsM / 3.28084);
+                    }
+                  } catch (e) {}
+                }
+
+                return (
+                  <tr key={pile.id} className="hover:bg-slate-50 transition">
+                    <td className="p-3.5 font-bold font-mono text-slate-900">
+                      {pile.pileNo}
+                    </td>
+                    <td className="p-3.5 font-semibold text-slate-700">
+                      {pile.gridLine}
+                    </td>
+                    <td className="p-3.5 text-slate-600 text-[11px]">
+                      {pile.criteria?.pileType || 'I-Section 0.26m'}
+                    </td>
+                    <td className="p-3.5 text-center font-mono">
+                      {drivenM ? (
+                        <div>
+                          <span className="font-bold text-slate-800">{drivenM} m</span>
+                          <span className="text-[10px] text-slate-400 block font-normal">({drivenFt} ft)</span>
+                        </div>
+                      ) : (
+                        <span className="text-slate-300">-</span>
+                      )}
+                    </td>
+                    <td className="p-3.5 text-center font-mono">
+                      {avgBlowsM > 0 ? (
+                        <div className="text-[11px]">
+                          <span className="font-bold text-amber-700">{avgBlowsM} blw/m</span>
+                          <span className="text-[10px] text-slate-500 block font-semibold">({avgBlowsFt} blw/ft)</span>
+                        </div>
+                      ) : (
+                        <span className="text-slate-300">-</span>
+                      )}
+                    </td>
+                    <td className="p-3.5 text-center">
+                      {!isDriven ? (
+                        <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-slate-100 text-slate-600">
+                          <Clock className="w-3 h-3" /> รอการตอก
+                        </span>
+                      ) : isSetPassed ? (
+                        <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-emerald-100 text-emerald-800">
+                          <CheckCircle2 className="w-3 h-3" /> ตอกเสร็จ (Set ผ่าน)
+                        </span>
+                      ) : (
+                        <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-rose-100 text-rose-800">
+                          <AlertCircle className="w-3 h-3" /> Set ไม่ได้ (Re-drive)
+                        </span>
+                      )}
+                    </td>
+                    <td className="p-3.5 text-center font-mono">
+                      {pile.drivingRecord ? (
+                        <span className="font-bold text-slate-800">
+                          {pile.drivingRecord.measuredLast10Cm} cm
+                        </span>
+                      ) : (
+                        <span className="text-slate-300">-</span>
+                      )}
+                    </td>
+                    <td className="p-3.5 text-center">
+                      {pile.qcInspection ? (
+                        <span
+                          className={`inline-block px-2 py-0.5 rounded-full text-[10px] font-extrabold ${
+                            qcStatus === 'NORMAL'
+                              ? 'bg-emerald-50 text-emerald-700 border border-emerald-200'
+                              : qcStatus === 'WARNING'
+                              ? 'bg-amber-50 text-amber-700 border border-amber-200'
+                              : 'bg-rose-50 text-rose-700 border border-rose-200'
+                          }`}
+                        >
+                          {qcStatus === 'NORMAL'
+                            ? `Pass (${pile.qcInspection.netDeviationCm}cm)`
+                            : qcStatus === 'WARNING'
+                            ? `Warning (${pile.qcInspection.netDeviationCm}cm)`
+                            : `Critical (${pile.qcInspection.netDeviationCm}cm)`}
+                        </span>
+                      ) : (
+                        <span className="text-slate-400 text-[11px]">ยังไม่ตรวจ</span>
+                      )}
+                    </td>
+                    <td className="p-3.5 text-right space-x-2">
+                      <Link
+                        href={`/piles/${pile.id}/drive`}
+                        className="inline-flex items-center gap-1 bg-amber-500 hover:bg-amber-600 text-slate-950 px-2.5 py-1.5 rounded-md text-[11px] font-bold shadow-xs"
+                      >
+                        <HardHat className="w-3 h-3" />
+                        <span>{isDriven ? 'แก้ไขตอก' : 'บันทึกตอก'}</span>
+                      </Link>
+                      <Link
+                        href={`/piles/${pile.id}/qc`}
+                        className="inline-flex items-center gap-1 bg-slate-100 hover:bg-slate-200 text-slate-700 px-2.5 py-1.5 rounded-md text-[11px] font-bold"
+                      >
+                        <ShieldCheck className="w-3 h-3" />
+                        <span>ตรวจ QC</span>
+                      </Link>
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </main>
+  );
+}

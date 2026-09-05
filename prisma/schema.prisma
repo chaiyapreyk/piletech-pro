@@ -1,0 +1,109 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = "file:./dev.db"
+}
+
+model Project {
+  id              String           @id @default(cuid())
+  name            String
+  code            String           @unique
+  location        String?
+  clientName      String?
+  consultantName  String?
+  contractorName  String?
+  settings        ProjectSettings?
+  piles           Pile[]
+  criteria        DrivingCriteria[]
+  createdAt       DateTime         @default(now())
+  updatedAt       DateTime         @updatedAt
+}
+
+model ProjectSettings {
+  id                     String   @id @default(cuid())
+  projectId              String   @unique
+  project                Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  defaultSafetyFactor    Float    @default(2.5)
+  maxPlumbnessPercent    Float    @default(1.0)
+  devNormalThresholdCm   Float    @default(5.0)
+  devCriticalThresholdCm Float    @default(10.0)
+}
+
+model DrivingCriteria {
+  id                 String   @id @default(cuid())
+  projectId          String
+  project            Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  pileType           String   // e.g. "I-0.26x0.26m", "Square 0.35m", "Spun Dia 0.40m"
+  safeWorkingLoadT   Float    // Ra in tons
+  safetyFactor       Float    @default(2.5)
+  hammerWeightT      Float    // W in tons
+  dropHeightCm       Float    // H in cm
+  cushionCoeffE      Float    @default(0.25)
+  tempCompressionC   Float    // C in cm
+  targetSet10BlowsCm Float   // Target S10 in cm
+  piles              Pile[]
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
+}
+
+model Pile {
+  id            String           @id @default(cuid())
+  projectId     String
+  project       Project          @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  criteriaId    String?
+  criteria      DrivingCriteria? @relation(fields: [criteriaId], references: [id])
+  pileNo        String           // e.g. "P-001"
+  gridLine      String           // e.g. "A-1"
+  status        String           @default("PLANNED") // PLANNED, DRIVING, COMPLETED, ISSUE
+  castDate      DateTime?
+  driveDate     DateTime?
+  drivingRecord DrivingRecord?
+  qcInspection  QCInspection?
+  createdAt     DateTime         @default(now())
+  updatedAt     DateTime         @updatedAt
+}
+
+model DrivingRecord {
+  id                String   @id @default(cuid())
+  pileId            String   @unique
+  pile              Pile     @relation(fields: [pileId], references: [id], onDelete: Cascade)
+  penetrationBlows  String   // JSON string of blow counts per meter e.g. "[15, 20, 25]"
+  measuredLast10Cm  Float    // Measured set for last 10 blows in cm
+  measuredTempCCm   Float?   // Measured C in cm
+  drivenLengthM     Float    // Total driven length in meters
+  cutOffLevelM      Float?   // Cut-off elevation
+  groundLevelM      Float?   // Ground surface elevation
+  tipLevelM         Float?   // Pile tip elevation
+  isSetPassed       Boolean  // True if measured <= target
+  inspectorName     String?
+  notes             String?
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+}
+
+model QCInspection {
+  id                String   @id @default(cuid())
+  pileId            String   @unique
+  pile              Pile     @relation(fields: [pileId], references: [id], onDelete: Cascade)
+  plumbnessXPercent Float?
+  plumbnessYPercent Float?
+  isPlumbnessPassed Boolean  @default(true)
+  designCoordX      Float?
+  designCoordY      Float?
+  actualCoordX      Float?
+  actualCoordY      Float?
+  deltaXCm          Float?
+  deltaYCm          Float?
+  netDeviationCm    Float?
+  deviationStatus   String   @default("NORMAL") // NORMAL, WARNING, CRITICAL
+  jointWeldStatus   String   @default("PASS")   // PASS, FAIL, NOT_APPLICABLE
+  headDamageStatus  String   @default("NONE")   // NONE, MINOR, SEVERE
+  photoUrls         String?  // JSON array of photo URLs
+  inspectorName     String?
+  approvedByCM      Boolean  @default(false)
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+}
