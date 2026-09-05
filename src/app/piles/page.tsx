@@ -2,6 +2,7 @@ import { prisma } from '@/lib/db';
 import Link from 'next/link';
 import { HardHat, ShieldCheck, CheckCircle2, AlertCircle, Clock, Plus, ChevronRight } from 'lucide-react';
 import DeletePileButton from '@/components/piles/DeletePileButton';
+import PileNumberMatrix from '@/components/piles/PileNumberMatrix';
 
 export const dynamic = 'force-dynamic';
 
@@ -23,13 +24,13 @@ export default async function PilesListPage() {
       <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-5 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
           <span className="text-xs font-bold text-amber-600 uppercase tracking-wider">
-            Site Management
+            Site Management & Pile Matrix
           </span>
           <h1 className="text-2xl font-black text-slate-800">
-            รายการเสาเข็มในโครงการ (Piles Register)
+            ผังสถานะและรายการเสาเข็มในโครงการ (Piles Register)
           </h1>
           <p className="text-xs text-slate-500 mt-1">
-            บันทึกการตอก, ตรวจสอบ Last 10 Blows, และบันทึกผลตรวจสอบ QC รายต้น
+            ระบุจำนวนเสาเข็มทั้งหมด, ตรวจสอบสถานะสีรายต้น, บันทึกการตอก และตรวจสอบ Last 10 Blows
           </p>
         </div>
 
@@ -41,6 +42,19 @@ export default async function PilesListPage() {
             คำนวณสูตร Hiley
           </Link>
         </div>
+      </div>
+
+      {/* Interactive Number Matrix Grid */}
+      <PileNumberMatrix initialPiles={piles} />
+
+      {/* Detailed Piles Table Section Header */}
+      <div className="pt-2">
+        <h2 className="text-lg font-black text-slate-800">
+          ตารางรายละเอียดข้อมูลเสาเข็ม (Detailed Pile Records)
+        </h2>
+        <p className="text-xs text-slate-500 mt-0.5">
+          แสดงข้อมูลวิศวกรรมเชิงลึก, ระยะ Set ที่วัดได้, และการจัดการข้อมูลรายต้น
+        </p>
       </div>
 
       {/* Piles Table / Card List */}

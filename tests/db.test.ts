@@ -94,4 +94,37 @@ describe('Prisma Database & Seeding Verification', () => {
     expect(orphanRecord).toBeNull();
     expect(orphanQC).toBeNull();
   });
+
+  it('can batch generate pile records without duplicates', async () => {
+    const project = await prisma.project.findFirst();
+    if (!project) throw new Error('No project found');
+
+    const prefix = 'BATCH-TEST-';
+    const batchPiles = [
+      { projectId: project.id, pileNo: `${prefix}01`, gridLine: 'A-1', status: 'PLANNED' },
+      { projectId: project.id, pileNo: `${prefix}02`, gridLine: 'A-2', status: 'PLANNED' },
+      { projectId: project.id, pileNo: `${prefix}03`, gridLine: 'A-3', status: 'PLANNED' },
+    ];
+
+    await prisma.pile.createMany({
+      data: batchPiles,
+    });
+
+    const count = await prisma.pile.count({
+      where: {
+        projectId: project.id,
+        pileNo: { startsWith: prefix },
+      },
+    });
+
+    expect(count).toBe(3);
+
+    // Clean up test batch
+    await prisma.pile.deleteMany({
+      where: {
+        projectId: project.id,
+        pileNo: { startsWith: prefix },
+      },
+    });
+  });
 });

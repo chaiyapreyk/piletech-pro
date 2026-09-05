@@ -10,7 +10,7 @@ export default function Navbar() {
   const navItems = [
     { href: '/dashboard', label: 'CM Dashboard', icon: LayoutDashboard },
     { href: '/calculator', label: 'Hiley Calculator', icon: Calculator },
-    { href: '/piles', label: 'Pile Records', icon: ClipboardList },
+    { href: '/piles', label: 'Pile Matrix & Records', icon: ClipboardList },
     { href: '/qc', label: 'QA/QC Inspection', icon: ShieldCheck },
     { href: '/reports', label: 'Reports & Export', icon: FileSpreadsheet },
   ];
