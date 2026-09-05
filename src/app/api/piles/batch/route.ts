@@ -1,4 +1,4 @@
-﻿import { NextResponse } from 'next/server';
+import { NextResponse } from 'next/server';
 import { prisma } from '@/lib/db';
 
 export async function POST(request: Request) {
@@ -71,9 +71,14 @@ export async function POST(request: Request) {
     }
 
     if (pilesToCreate.length > 0) {
-      await prisma.pile.createMany({
-        data: pilesToCreate,
-      });
+      // Chunk insertions in batches of 100 for SQLite safety
+      const chunkSize = 100;
+      for (let i = 0; i < pilesToCreate.length; i += chunkSize) {
+        const chunk = pilesToCreate.slice(i, i + chunkSize);
+        await prisma.pile.createMany({
+          data: chunk,
+        });
+      }
     }
 
     const totalNow = await prisma.pile.count({

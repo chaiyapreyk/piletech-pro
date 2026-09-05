@@ -1,4 +1,4 @@
-﻿'use client';
+'use client';
 
 import React, { useState, useMemo } from 'react';
 import Link from 'next/link';
@@ -18,6 +18,9 @@ import {
   Sparkles,
   ArrowRight,
   Trash2,
+  Table as TableIcon,
+  Grid3X3,
+  LayoutGrid,
 } from 'lucide-react';
 import DeletePileButton from './DeletePileButton';
 
@@ -55,8 +58,10 @@ export default function PileNumberMatrix({ initialPiles }: PileNumberMatrixProps
   const [filterStatus, setFilterStatus] = useState<'ALL' | 'NOT_DRIVEN' | 'PASSED' | 'FAILED'>('ALL');
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedPile, setSelectedPile] = useState<PileData | null>(null);
+  const [viewMode, setViewMode] = useState<'TABLE_10' | 'DENSE_HEATMAP' | 'CARDS'>('TABLE_10');
+  const [selectedRange, setSelectedRange] = useState<string>('ALL');
   const [showBatchModal, setShowBatchModal] = useState(false);
-  const [batchCount, setBatchCount] = useState('30');
+  const [batchCount, setBatchCount] = useState('300');
   const [batchPrefix, setBatchPrefix] = useState('P-');
   const [isSubmittingBatch, setIsSubmittingBatch] = useState(false);
   const [batchFeedback, setBatchFeedback] = useState<string | null>(null);
@@ -84,9 +89,33 @@ export default function PileNumberMatrix({ initialPiles }: PileNumberMatrixProps
   const failedCount = failedPiles.length;
   const progressPercent = totalCount > 0 ? Math.round((drivenPiles.length / totalCount) * 100) : 0;
 
-  // Filtered piles
+  // Compute numerical ranges (e.g. 1-50, 51-100, 101-150...) based on total count
+  const rangeOptions = useMemo(() => {
+    if (totalCount <= 50) return [];
+    const ranges = [{ label: `ทั้งหมด (${totalCount})`, value: 'ALL' }];
+    const step = 50;
+    for (let i = 1; i <= totalCount; i += step) {
+      const end = Math.min(i + step - 1, totalCount);
+      ranges.push({
+        label: `${String(i).padStart(3, '0')} - ${String(end).padStart(3, '0')}`,
+        value: `${i}-${end}`,
+      });
+    }
+    return ranges;
+  }, [totalCount]);
+
+  // Filtered piles with Range and Search
   const filteredPiles = useMemo(() => {
-    return piles.filter((pile) => {
+    return piles.filter((pile, index) => {
+      // Range filter (1-based index)
+      if (selectedRange !== 'ALL') {
+        const [startStr, endStr] = selectedRange.split('-');
+        const start = parseInt(startStr, 10);
+        const end = parseInt(endStr, 10);
+        const pileIndex = index + 1;
+        if (pileIndex < start || pileIndex > end) return false;
+      }
+
       // Status filter
       if (filterStatus === 'NOT_DRIVEN' && pile.drivingRecord) return false;
       if (filterStatus === 'PASSED' && pile.drivingRecord?.isSetPassed !== true) return false;
@@ -102,7 +131,55 @@ export default function PileNumberMatrix({ initialPiles }: PileNumberMatrixProps
 
       return true;
     });
-  }, [piles, filterStatus, searchQuery]);
+  }, [piles, filterStatus, searchQuery, selectedRange]);
+
+  // Group piles into chunks of 10 for Table-10 Grid view
+  const rowsOf10 = useMemo(() => {
+    const rows: { rowLabel: string; items: (PileData | null)[] }[] = [];
+    if (filteredPiles.length === 0) return rows;
+
+    for (let i = 0; i < filteredPiles.length; i += 10) {
+      const chunk = filteredPiles.slice(i, i + 10);
+      const firstNum = chunk[0]?.pileNo || '';
+      const lastNum = chunk[chunk.length - 1]?.pileNo || '';
+      const rowLabel = `${firstNum} - ${lastNum}`;
+      
+      const items: (PileData | null)[] = [...chunk];
+      while (items.length < 10 && filteredPiles.length > 10) {
+        items.push(null);
+      }
+
+      rows.push({ rowLabel, items });
+    }
+    return rows;
+  }, [filteredPiles]);
+
+  // Style helper for pile cells
+  const getPileStatusStyle = (pile: PileData) => {
+    const isDriven = !!pile.drivingRecord;
+    const isPassed = pile.drivingRecord?.isSetPassed === true;
+    const isFailed = isDriven && !isPassed;
+
+    if (isFailed) {
+      return {
+        container: 'bg-rose-500 border-rose-600 text-white shadow-xs hover:bg-rose-600 ring-2 ring-rose-400',
+        badge: 'bg-rose-700 text-white',
+        text: 'Re-drive',
+      };
+    }
+    if (isPassed) {
+      return {
+        container: 'bg-emerald-600 border-emerald-700 text-white shadow-xs hover:bg-emerald-700',
+        badge: 'bg-emerald-800 text-white',
+        text: pile.drivingRecord?.measuredLast10Cm ? `${pile.drivingRecord.measuredLast10Cm}cm` : 'ผ่าน',
+      };
+    }
+    return {
+      container: 'bg-white border-slate-300 text-slate-800 hover:border-slate-500 hover:bg-slate-50',
+      badge: 'bg-slate-100 text-slate-500',
+      text: 'รอตอก',
+    };
+  };
 
   // Handle batch generate submission
   const handleBatchGenerate = async (e: React.FormEvent) => {
@@ -237,9 +314,10 @@ export default function PileNumberMatrix({ initialPiles }: PileNumberMatrixProps
       </div>
 
       {/* 2. Control Toolbar */}
-      <div className="bg-white rounded-xl shadow-xs border border-slate-200 p-4 flex flex-col md:flex-row md:items-center justify-between gap-3">
-        {/* Search & Quick Filters */}
-        <div className="flex flex-wrap items-center gap-2">
+      <div className="bg-white rounded-xl shadow-xs border border-slate-200 p-4 space-y-3">
+        <div className="flex flex-col md:flex-row md:items-center justify-between gap-3">
+          {/* Search & Quick Filters */}
+          <div className="flex flex-wrap items-center gap-2">
           <div className="relative min-w-[180px]">
             <Search className="w-3.5 h-3.5 absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
             <input
@@ -305,46 +383,115 @@ export default function PileNumberMatrix({ initialPiles }: PileNumberMatrixProps
           </div>
         </div>
 
-        {/* Action Button: Batch Generator */}
-        <div className="flex items-center gap-2">
-          <button
-            onClick={() => setShowBatchModal(true)}
-            className="inline-flex items-center gap-1.5 bg-indigo-600 hover:bg-indigo-700 text-white px-3.5 py-1.5 rounded-lg text-xs font-bold transition shadow-xs"
-          >
-            <Settings className="w-3.5 h-3.5" />
-            <span>ระบุจำนวนเข็ม / เพิ่มอัตโนมัติ</span>
-          </button>
+          {/* Right Tools: View Mode Toggle & Batch Setup */}
+          <div className="flex items-center gap-2">
+            {/* View Mode Switcher */}
+            <div className="flex items-center bg-slate-100 p-1 rounded-lg gap-1 text-xs">
+              <button
+                type="button"
+                onClick={() => setViewMode('TABLE_10')}
+                title="ตารางกริดแถวละ 10 ต้น (อ่านง่ายมาตรฐาน)"
+                className={`flex items-center gap-1 px-2.5 py-1 rounded-md font-bold transition ${
+                  viewMode === 'TABLE_10'
+                    ? 'bg-white text-slate-900 shadow-xs'
+                    : 'text-slate-600 hover:text-slate-900'
+                }`}
+              >
+                <TableIcon className="w-3.5 h-3.5" />
+                <span className="hidden sm:inline">ตาราง 10 คอลัมน์</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setViewMode('DENSE_HEATMAP')}
+                title="ตารางกริดความหนาแน่นสูง (สำหรับเข็ม 300+ ต้น)"
+                className={`flex items-center gap-1 px-2.5 py-1 rounded-md font-bold transition ${
+                  viewMode === 'DENSE_HEATMAP'
+                    ? 'bg-white text-slate-900 shadow-xs'
+                    : 'text-slate-600 hover:text-slate-900'
+                }`}
+              >
+                <Grid3X3 className="w-3.5 h-3.5" />
+                <span className="hidden sm:inline">กริด 300+ แน่นพิเศษ</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setViewMode('CARDS')}
+                title="การ์ดขยายรายละเอียด"
+                className={`flex items-center gap-1 px-2.5 py-1 rounded-md font-bold transition ${
+                  viewMode === 'CARDS'
+                    ? 'bg-white text-slate-900 shadow-xs'
+                    : 'text-slate-600 hover:text-slate-900'
+                }`}
+              >
+                <LayoutGrid className="w-3.5 h-3.5" />
+                <span className="hidden sm:inline">การ์ดใหญ่</span>
+              </button>
+            </div>
+
+            {/* Action Button: Batch Generator */}
+            <button
+              type="button"
+              onClick={() => setShowBatchModal(true)}
+              className="inline-flex items-center gap-1.5 bg-indigo-600 hover:bg-indigo-700 text-white px-3.5 py-1.5 rounded-lg text-xs font-bold transition shadow-xs whitespace-nowrap"
+            >
+              <Settings className="w-3.5 h-3.5" />
+              <span>ระบุจำนวนเข็ม (300+)</span>
+            </button>
+          </div>
         </div>
+
+        {/* Quick Range Jump (If more than 50 piles) */}
+        {rangeOptions.length > 0 && (
+          <div className="flex items-center gap-1.5 overflow-x-auto pt-2 border-t border-slate-100 text-[11px]">
+            <span className="text-slate-400 font-bold whitespace-nowrap mr-1">ช่วงเบอร์เข็ม:</span>
+            {rangeOptions.map((rng) => (
+              <button
+                key={rng.value}
+                type="button"
+                onClick={() => setSelectedRange(rng.value)}
+                className={`px-2.5 py-1 rounded-full font-mono font-bold whitespace-nowrap transition ${
+                  selectedRange === rng.value
+                    ? 'bg-slate-900 text-white shadow-xs'
+                    : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+                }`}
+              >
+                {rng.label}
+              </button>
+            ))}
+          </div>
+        )}
       </div>
 
       {/* 3. Number Matrix Visual Grid */}
-      <div className="bg-white rounded-xl shadow-xs border border-slate-200 p-5 space-y-4">
+      <div className="bg-white rounded-xl shadow-xs border border-slate-200 p-4 sm:p-5 space-y-4">
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-slate-100 pb-3">
           <div>
             <h2 className="text-base font-black text-slate-800 flex items-center gap-2">
-              <span>ผังตัวเลขตรวจสอบสถานะเสาเข็ม (Pile Number Visual Matrix)</span>
-              <span className="text-xs font-semibold px-2 py-0.5 rounded-full bg-slate-100 text-slate-600">
-                แสดง {filteredPiles.length} จาก {totalCount} ต้น
+              <span>ผังกริดสถานะเสาเข็ม (Pile Progress Grid Matrix)</span>
+              <span className="text-xs font-semibold px-2 py-0.5 rounded-full bg-slate-100 text-slate-600 font-mono">
+                {filteredPiles.length} / {totalCount} ต้น
               </span>
             </h2>
             <p className="text-xs text-slate-500 mt-0.5">
-              กดที่หมายเลขต้นเพื่อดูข้อมูลสถิติ หรือกดบันทึกผลการตอกและผลตรวจ QC ได้ทันที
+              คลิกหรือแตะที่ช่องตัวเลขเพื่อดูรายละเอียด, บันทึกการตอก, หรือตรวจ QC
             </p>
           </div>
 
           {/* Color Legend */}
           <div className="flex flex-wrap items-center gap-3 text-[11px] font-bold">
-            <span className="flex items-center gap-1 text-slate-600">
-              <span className="w-3 h-3 rounded-sm bg-slate-100 border border-slate-300 inline-block"></span>
-              ยังไม่ตอก
+            <span className="flex items-center gap-1.5 text-slate-600">
+              <span className="w-3.5 h-3.5 rounded-sm bg-white border-2 border-slate-300 inline-block shadow-2xs"></span>
+              ยังไม่ได้ตอก ({notDrivenCount})
             </span>
-            <span className="flex items-center gap-1 text-emerald-700">
-              <span className="w-3 h-3 rounded-sm bg-emerald-500 inline-block"></span>
-              ตอกเสร็จ (ผ่าน)
+            <span className="flex items-center gap-1.5 text-emerald-700">
+              <span className="w-3.5 h-3.5 rounded-sm bg-emerald-600 inline-block"></span>
+              ตอกเสร็จ Set ผ่าน ({passedCount})
             </span>
-            <span className="flex items-center gap-1 text-rose-700">
-              <span className="w-3 h-3 rounded-sm bg-rose-500 inline-block"></span>
-              Re-drive / ปัญหา
+            <span className="flex items-center gap-1.5 text-rose-700">
+              <span className="w-3.5 h-3.5 rounded-sm bg-rose-500 inline-block"></span>
+              Re-drive / ปัญหา ({failedCount})
             </span>
           </div>
         </div>
@@ -353,9 +500,11 @@ export default function PileNumberMatrix({ initialPiles }: PileNumberMatrixProps
           <div className="py-12 text-center text-slate-400">
             <p className="text-sm font-semibold">ไม่พบรายการเสาเข็มที่ตรงกับเงื่อนไข</p>
             <button
+              type="button"
               onClick={() => {
                 setFilterStatus('ALL');
                 setSearchQuery('');
+                setSelectedRange('ALL');
               }}
               className="mt-2 text-xs font-bold text-indigo-600 hover:underline"
             >
@@ -363,52 +512,116 @@ export default function PileNumberMatrix({ initialPiles }: PileNumberMatrixProps
             </button>
           </div>
         ) : (
-          <div className="grid grid-cols-4 sm:grid-cols-6 md:grid-cols-8 lg:grid-cols-10 xl:grid-cols-12 gap-2.5">
-            {filteredPiles.map((pile) => {
-              const isDriven = !!pile.drivingRecord;
-              const isPassed = pile.drivingRecord?.isSetPassed === true;
-              const isFailed = isDriven && !isPassed;
-              const measuredSet = pile.drivingRecord?.measuredLast10Cm;
+          <>
+            {/* VIEW MODE 1: Table with 10 Columns (Standard Grid Table) */}
+            {viewMode === 'TABLE_10' && (
+              <div className="overflow-x-auto">
+                <table className="w-full border-collapse">
+                  <thead>
+                    <tr className="bg-slate-50 border-b border-slate-200 text-slate-500 text-[10px] font-mono">
+                      <th className="p-2 text-left font-bold w-24 text-slate-400">ช่วงลำดับ</th>
+                      {[1, 2, 3, 4, 5, 6, 7, 8, 9, 10].map((col) => (
+                        <th key={col} className="p-2 text-center font-black text-slate-600">
+                          +{col}
+                        </th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-100">
+                    {rowsOf10.map((row, rIdx) => (
+                      <tr key={rIdx} className="hover:bg-slate-50/50 transition">
+                        <td className="p-2 text-[10px] font-mono font-bold text-slate-400 whitespace-nowrap">
+                          {row.rowLabel}
+                        </td>
+                        {row.items.map((pile, cIdx) => {
+                          if (!pile) {
+                            return <td key={cIdx} className="p-1 text-center"></td>;
+                          }
+                          const style = getPileStatusStyle(pile);
+                          const cleanNum = pile.pileNo.replace(/^[A-Za-z]+-0*/, '') || pile.pileNo;
 
-              // Color styles
-              let btnClass = 'bg-white border-2 border-slate-200 text-slate-800 hover:border-slate-400 hover:bg-slate-50';
-              let badgeClass = 'bg-slate-100 text-slate-500';
-              let statusText = 'รอตอก';
+                          return (
+                            <td key={pile.id} className="p-1">
+                              <button
+                                type="button"
+                                onClick={() => setSelectedPile(pile)}
+                                title={`${pile.pileNo} (${pile.gridLine}) - ${style.text}`}
+                                className={`w-full py-2 px-1 rounded-lg border-2 flex flex-col items-center justify-center transition-transform active:scale-95 cursor-pointer ${style.container}`}
+                              >
+                                <span className="text-[9px] font-mono opacity-80 leading-none">
+                                  {pile.gridLine}
+                                </span>
+                                <span className="text-xs sm:text-sm font-black font-mono my-0.5 leading-none">
+                                  {cleanNum}
+                                </span>
+                                <span className="text-[8px] font-bold opacity-90 leading-none">
+                                  {style.text}
+                                </span>
+                              </button>
+                            </td>
+                          );
+                        })}
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
 
-              if (isFailed) {
-                btnClass = 'bg-rose-500 border-2 border-rose-600 text-white shadow-xs hover:bg-rose-600 ring-2 ring-rose-300';
-                badgeClass = 'bg-rose-700 text-white';
-                statusText = 'Re-drive';
-              } else if (isPassed) {
-                btnClass = 'bg-emerald-600 border-2 border-emerald-700 text-white shadow-xs hover:bg-emerald-700';
-                badgeClass = 'bg-emerald-800 text-white';
-                statusText = measuredSet ? `${measuredSet}cm` : 'ผ่าน';
-              }
+            {/* VIEW MODE 2: Dense Heatmap Grid (Ultra Compact for 300+ Piles) */}
+            {viewMode === 'DENSE_HEATMAP' && (
+              <div className="grid grid-cols-6 sm:grid-cols-10 md:grid-cols-15 lg:grid-cols-20 gap-1.5">
+                {filteredPiles.map((pile) => {
+                  const style = getPileStatusStyle(pile);
+                  const cleanNum = pile.pileNo.replace(/^[A-Za-z]+-0*/, '') || pile.pileNo;
 
-              return (
-                <button
-                  key={pile.id}
-                  onClick={() => setSelectedPile(pile)}
-                  className={`relative p-2 rounded-xl flex flex-col items-center justify-between text-center transition-transform active:scale-95 cursor-pointer min-h-[72px] ${btnClass}`}
-                >
-                  {/* Grid line indicator */}
-                  <span className="text-[9px] font-mono tracking-tight opacity-75 uppercase">
-                    {pile.gridLine}
-                  </span>
+                  return (
+                    <button
+                      key={pile.id}
+                      type="button"
+                      onClick={() => setSelectedPile(pile)}
+                      title={`${pile.pileNo} (${pile.gridLine}) - ${style.text}`}
+                      className={`aspect-square p-1 rounded-md border-2 flex flex-col items-center justify-center transition-all hover:scale-110 active:scale-95 cursor-pointer text-center ${style.container}`}
+                    >
+                      <span className="text-[10px] font-black font-mono leading-none">
+                        {cleanNum}
+                      </span>
+                      <span className="text-[7px] font-medium opacity-80 leading-none mt-0.5 truncate max-w-full">
+                        {pile.gridLine}
+                      </span>
+                    </button>
+                  );
+                })}
+              </div>
+            )}
 
-                  {/* Pile number */}
-                  <span className="text-sm sm:text-base font-black font-mono tracking-tight my-0.5">
-                    {pile.pileNo.replace(/^P-0*/, 'P-') || pile.pileNo}
-                  </span>
-
-                  {/* Status chip */}
-                  <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded-sm ${badgeClass}`}>
-                    {statusText}
-                  </span>
-                </button>
-              );
-            })}
-          </div>
+            {/* VIEW MODE 3: Cards View */}
+            {viewMode === 'CARDS' && (
+              <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-6 lg:grid-cols-8 gap-3">
+                {filteredPiles.map((pile) => {
+                  const style = getPileStatusStyle(pile);
+                  return (
+                    <button
+                      key={pile.id}
+                      type="button"
+                      onClick={() => setSelectedPile(pile)}
+                      className={`p-3 rounded-xl border-2 flex flex-col items-center justify-between text-center transition-transform active:scale-95 cursor-pointer min-h-[85px] ${style.container}`}
+                    >
+                      <span className="text-[10px] font-mono tracking-tight opacity-80 uppercase">
+                        {pile.gridLine}
+                      </span>
+                      <span className="text-base font-black font-mono my-1">
+                        {pile.pileNo}
+                      </span>
+                      <span className={`text-[9px] font-bold px-2 py-0.5 rounded ${style.badge}`}>
+                        {style.text}
+                      </span>
+                    </button>
+                  );
+                })}
+              </div>
+            )}
+          </>
         )}
       </div>
 
@@ -572,14 +785,30 @@ export default function PileNumberMatrix({ initialPiles }: PileNumberMatrixProps
                 <input
                   type="number"
                   min="1"
-                  max="500"
+                  max="1000"
                   required
                   value={batchCount}
                   onChange={(e) => setBatchCount(e.target.value)}
                   className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-sm font-bold font-mono focus:bg-white focus:outline-none focus:ring-2 focus:ring-indigo-500"
-                  placeholder="เช่น 30, 50, 100"
+                  placeholder="เช่น 300, 350, 500"
                 />
-                <span className="text-[10px] text-slate-400 mt-1 block">
+
+                {/* Quick Presets */}
+                <div className="flex flex-wrap items-center gap-1.5 mt-2">
+                  <span className="text-[10px] text-slate-400 font-semibold">ปุ่มลัด:</span>
+                  {[50, 100, 200, 300, 350, 500].map((preset) => (
+                    <button
+                      key={preset}
+                      type="button"
+                      onClick={() => setBatchCount(String(preset))}
+                      className="px-2 py-0.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded text-[10px] font-mono font-bold"
+                    >
+                      {preset}
+                    </button>
+                  ))}
+                </div>
+
+                <span className="text-[10px] text-slate-400 mt-2 block">
                   ปัจจุบันมีเสาเข็มในระบบแล้ว {totalCount} ต้น
                 </span>
               </div>
