@@ -3,6 +3,7 @@
 import React, { useState, useMemo } from 'react';
 import Link from 'next/link';
 import { Search, Filter, HardHat, ShieldCheck, CheckCircle2, AlertCircle, Clock } from 'lucide-react';
+import DeletePileButton from '@/components/piles/DeletePileButton';
 
 interface PileItem {
   id: string;
@@ -238,6 +239,7 @@ export default function PileTableGrid({ piles }: { piles: PileItem[] }) {
                         <ShieldCheck className="w-3 h-3" />
                         <span>ตรวจ QC</span>
                       </Link>
+                      <DeletePileButton pileId={pile.id} pileNo={pile.pileNo} />
                     </td>
                   </tr>
                 );

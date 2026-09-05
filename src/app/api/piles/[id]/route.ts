@@ -31,3 +31,35 @@ export async function GET(
     return NextResponse.json({ error: 'Failed to fetch pile' }, { status: 500 });
   }
 }
+
+export async function DELETE(
+  request: Request,
+  { params }: { params: Promise<{ id: string }> }
+) {
+  try {
+    const { id } = await params;
+    
+    // Check if pile exists
+    const existing = await prisma.pile.findUnique({
+      where: { id },
+      include: { drivingRecord: true, qcInspection: true },
+    });
+
+    if (!existing) {
+      return NextResponse.json({ error: 'Pile not found' }, { status: 404 });
+    }
+
+    // Delete pile (drivingRecord and qcInspection will cascade delete via foreign keys)
+    await prisma.pile.delete({
+      where: { id },
+    });
+
+    return NextResponse.json({
+      success: true,
+      message: `Pile ${existing.pileNo} deleted successfully`,
+    });
+  } catch (error) {
+    console.error('Failed to delete pile:', error);
+    return NextResponse.json({ error: 'Failed to delete pile' }, { status: 500 });
+  }
+}

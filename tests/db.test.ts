@@ -32,4 +32,66 @@ describe('Prisma Database & Seeding Verification', () => {
     const p3 = project?.piles.find((p) => p.pileNo === 'P-003');
     expect(p3?.drivingRecord?.isSetPassed).toBe(false);
   });
+
+  it('safely deletes a pile and cascade deletes its driving and qc records', async () => {
+    const project = await prisma.project.findFirst();
+    if (!project) throw new Error('No project found');
+
+    // Create a temporary test pile
+    const tempPile = await prisma.pile.create({
+      data: {
+        projectId: project.id,
+        pileNo: 'TEST-TEMP-DELETE',
+        gridLine: 'T-99',
+        status: 'COMPLETED',
+        drivingRecord: {
+          create: {
+            penetrationBlows: JSON.stringify([10, 20]),
+            measuredLast10Cm: 2.0,
+            drivenLengthM: 12.0,
+            isSetPassed: true,
+          },
+        },
+        qcInspection: {
+          create: {
+            netDeviationCm: 1.5,
+            deviationStatus: 'NORMAL',
+          },
+        },
+      },
+    });
+
+    expect(tempPile.id).toBeDefined();
+
+    // Verify relations were created
+    const createdRecord = await prisma.drivingRecord.findUnique({
+      where: { pileId: tempPile.id },
+    });
+    const createdQC = await prisma.qCInspection.findUnique({
+      where: { pileId: tempPile.id },
+    });
+    expect(createdRecord).not.toBeNull();
+    expect(createdQC).not.toBeNull();
+
+    // Delete the pile
+    await prisma.pile.delete({
+      where: { id: tempPile.id },
+    });
+
+    // Verify pile is gone
+    const deletedPile = await prisma.pile.findUnique({
+      where: { id: tempPile.id },
+    });
+    expect(deletedPile).toBeNull();
+
+    // Verify cascade delete cleaned up driving and qc records
+    const orphanRecord = await prisma.drivingRecord.findUnique({
+      where: { pileId: tempPile.id },
+    });
+    const orphanQC = await prisma.qCInspection.findUnique({
+      where: { pileId: tempPile.id },
+    });
+    expect(orphanRecord).toBeNull();
+    expect(orphanQC).toBeNull();
+  });
 });

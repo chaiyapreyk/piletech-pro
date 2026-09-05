@@ -1,6 +1,7 @@
 import { prisma } from '@/lib/db';
 import Link from 'next/link';
 import { HardHat, ShieldCheck, CheckCircle2, AlertCircle, Clock, Plus, ChevronRight } from 'lucide-react';
+import DeletePileButton from '@/components/piles/DeletePileButton';
 
 export const dynamic = 'force-dynamic';
 
@@ -156,7 +157,7 @@ export default async function PilesListPage() {
                         <span className="text-slate-400 text-[11px]">ยังไม่ตรวจ</span>
                       )}
                     </td>
-                    <td className="p-3.5 text-right space-x-2">
+                    <td className="p-3.5 text-right space-x-1.5 whitespace-nowrap">
                       <Link
                         href={`/piles/${pile.id}/drive`}
                         className="inline-flex items-center gap-1 bg-amber-500 hover:bg-amber-600 text-slate-950 px-2.5 py-1.5 rounded-md text-[11px] font-bold shadow-xs"
@@ -171,6 +172,7 @@ export default async function PilesListPage() {
                         <ShieldCheck className="w-3 h-3" />
                         <span>ตรวจ QC</span>
                       </Link>
+                      <DeletePileButton pileId={pile.id} pileNo={pile.pileNo} />
                     </td>
                   </tr>
                 );
