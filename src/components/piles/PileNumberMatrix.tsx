@@ -95,6 +95,7 @@ export default function PileNumberMatrix({ initialPiles }: PileNumberMatrixProps
   const [showBatchModal, setShowBatchModal] = useState(false);
   const [batchCount, setBatchCount] = useState('300');
   const [batchPrefix, setBatchPrefix] = useState('P-');
+  const [batchBuilding, setBatchBuilding] = useState('Building A');
   const [isSubmittingBatch, setIsSubmittingBatch] = useState(false);
   const [batchFeedback, setBatchFeedback] = useState<string | null>(null);
 
@@ -411,6 +412,7 @@ export default function PileNumberMatrix({ initialPiles }: PileNumberMatrixProps
         body: JSON.stringify({
           totalCount: count,
           prefix: batchPrefix || 'P-',
+          building: batchBuilding || 'Building A',
         }),
       });
 
@@ -1197,6 +1199,39 @@ export default function PileNumberMatrix({ initialPiles }: PileNumberMatrixProps
                   className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-sm font-bold font-mono focus:bg-white focus:outline-none focus:ring-2 focus:ring-indigo-500"
                   placeholder="เช่น P-, B-, S-"
                 />
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold text-slate-700 mb-1">
+                  อาคาร / โซน (Building / Zone)
+                </label>
+                <input
+                  type="text"
+                  required
+                  value={batchBuilding}
+                  onChange={(e) => setBatchBuilding(e.target.value)}
+                  className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-sm font-bold focus:bg-white focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                  placeholder="เช่น Building A, Building B, โซนอาคาร 1"
+                />
+                {buildingList.length > 0 && (
+                  <div className="flex flex-wrap items-center gap-1.5 mt-2">
+                    <span className="text-[10px] text-slate-400 font-semibold">เลือกจากที่มีอยู่:</span>
+                    {buildingList.map((bldg) => (
+                      <button
+                        key={bldg}
+                        type="button"
+                        onClick={() => setBatchBuilding(bldg)}
+                        className={`px-2 py-0.5 rounded text-[10px] font-bold transition ${
+                          batchBuilding === bldg
+                            ? 'bg-indigo-600 text-white'
+                            : 'bg-slate-100 hover:bg-slate-200 text-slate-700'
+                        }`}
+                      >
+                        🏢 {bldg}
+                      </button>
+                    ))}
+                  </div>
+                )}
               </div>
 
               {batchFeedback && (

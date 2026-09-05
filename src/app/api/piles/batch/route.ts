@@ -10,6 +10,7 @@ export async function POST(request: Request) {
       startNumber = 1,
       digits = 3,
       criteriaId,
+      building = 'Building A',
     } = body;
 
     const count = parseInt(totalCount, 10);
@@ -47,6 +48,7 @@ export async function POST(request: Request) {
       criteriaId: string | null;
       pileNo: string;
       gridLine: string;
+      building: string;
       status: string;
     }> = [];
 
@@ -65,6 +67,7 @@ export async function POST(request: Request) {
           criteriaId: targetCriteriaId,
           pileNo,
           gridLine,
+          building: building?.trim() || 'Building A',
           status: 'PLANNED',
         });
       }
