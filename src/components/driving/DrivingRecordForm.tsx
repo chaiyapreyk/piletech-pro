@@ -22,6 +22,9 @@ interface PileData {
   } | null;
   drivingRecord?: {
     penetrationBlows: string;
+    recordUnit?: string | null;
+    recordScope?: string | null;
+    windowLengthFt?: number | null;
     measuredLast10Cm: number;
     measuredTempCCm?: number | null;
     drivenLengthM: number;
@@ -41,6 +44,16 @@ export default function DrivingRecordForm({ pile }: { pile: PileData }) {
     : [];
 
   const [blowCounts, setBlowCounts] = useState<number[]>(initialBlows);
+  const [recordUnit, setRecordUnit] = useState<'METER' | 'FEET'>(
+    (pile.drivingRecord?.recordUnit as 'METER' | 'FEET') || 'METER'
+  );
+  const [recordScope, setRecordScope] = useState<'FULL' | 'WINDOW'>(
+    (pile.drivingRecord?.recordScope as 'FULL' | 'WINDOW') || 'FULL'
+  );
+  const [windowLength, setWindowLength] = useState<number>(
+    pile.drivingRecord?.windowLengthFt || 20
+  );
+
   const [measuredLast10, setMeasuredLast10] = useState<number>(
     pile.drivingRecord?.measuredLast10Cm ?? 5.0
   );
@@ -75,12 +88,18 @@ export default function DrivingRecordForm({ pile }: { pile: PileData }) {
     setSavedSuccess(false);
 
     try {
-      const drivenLength = blowCounts.length > 0 ? blowCounts.length : 0;
+      const drivenLength = recordUnit === 'FEET'
+        ? (blowCounts.length > 0 ? Number((blowCounts.length * 0.3048).toFixed(2)) : 0)
+        : (blowCounts.length > 0 ? blowCounts.length : 0);
+
       const res = await fetch(`/api/piles/${pile.id}/drive`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           penetrationBlows: blowCounts,
+          recordUnit,
+          recordScope,
+          windowLengthFt: windowLength,
           measuredLast10Cm: measuredLast10,
           measuredTempCCm: measuredTempC,
           drivenLengthM: drivenLength,
@@ -151,12 +170,26 @@ export default function DrivingRecordForm({ pile }: { pile: PileData }) {
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
         {/* Left: Blow count meter logger with Rolling Wheel */}
         <div className="lg:col-span-7 bg-white rounded-xl shadow-sm border border-slate-200 p-5 space-y-4">
-          <BlowCountInput blowCounts={blowCounts} onChange={setBlowCounts} />
+          <BlowCountInput
+            blowCounts={blowCounts}
+            onChange={setBlowCounts}
+            recordUnit={recordUnit}
+            onUnitChange={setRecordUnit}
+            recordScope={recordScope}
+            onScopeChange={setRecordScope}
+            windowLength={windowLength}
+            onWindowLengthChange={setWindowLength}
+          />
         </div>
 
         {/* Right: Real-time Depth Chart */}
         <div className="lg:col-span-5 space-y-4">
-          <DepthSoilChart blowCounts={blowCounts} />
+          <DepthSoilChart
+            blowCounts={blowCounts}
+            recordUnit={recordUnit}
+            recordScope={recordScope}
+            windowLength={windowLength}
+          />
         </div>
       </div>
 

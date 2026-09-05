@@ -10,6 +10,9 @@ export async function POST(
     const body = await request.json();
     const {
       penetrationBlows,
+      recordUnit,
+      recordScope,
+      windowLengthFt,
       measuredLast10Cm,
       measuredTempCCm,
       drivenLengthM,
@@ -38,6 +41,9 @@ export async function POST(
       create: {
         pileId,
         penetrationBlows: JSON.stringify(penetrationBlows || []),
+        recordUnit: recordUnit || 'METER',
+        recordScope: recordScope || 'FULL',
+        windowLengthFt: windowLengthFt !== undefined ? Number(windowLengthFt) : 20,
         measuredLast10Cm: Number(measuredLast10Cm) || 0,
         measuredTempCCm: Number(measuredTempCCm) || 1.2,
         drivenLengthM: Number(drivenLengthM) || 0,
@@ -50,6 +56,9 @@ export async function POST(
       },
       update: {
         penetrationBlows: JSON.stringify(penetrationBlows || []),
+        recordUnit: recordUnit || 'METER',
+        recordScope: recordScope || 'FULL',
+        windowLengthFt: windowLengthFt !== undefined ? Number(windowLengthFt) : 20,
         measuredLast10Cm: Number(measuredLast10Cm) || 0,
         measuredTempCCm: Number(measuredTempCCm) || 1.2,
         drivenLengthM: Number(drivenLengthM) || 0,

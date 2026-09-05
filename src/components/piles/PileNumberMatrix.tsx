@@ -21,6 +21,11 @@ import {
   Table as TableIcon,
   Grid3X3,
   LayoutGrid,
+  CheckSquare,
+  Square,
+  Building,
+  Edit3,
+  Save,
 } from 'lucide-react';
 import DeletePileButton from './DeletePileButton';
 
@@ -28,6 +33,7 @@ export interface PileData {
   id: string;
   pileNo: string;
   gridLine: string;
+  building?: string | null;
   status: string;
   criteria?: {
     pileType: string;
@@ -37,6 +43,9 @@ export interface PileData {
   drivingRecord?: {
     id: string;
     penetrationBlows?: string | null;
+    recordUnit?: string;
+    recordScope?: string;
+    windowLengthFt?: number | null;
     measuredLast10Cm: number;
     drivenLengthM: number;
     isSetPassed: boolean;
@@ -56,10 +65,33 @@ export default function PileNumberMatrix({ initialPiles }: PileNumberMatrixProps
   const router = useRouter();
   const [piles, setPiles] = useState<PileData[]>(initialPiles);
   const [filterStatus, setFilterStatus] = useState<'ALL' | 'NOT_DRIVEN' | 'PASSED' | 'FAILED'>('ALL');
+  const [filterBuilding, setFilterBuilding] = useState<string>('ALL');
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedPile, setSelectedPile] = useState<PileData | null>(null);
   const [viewMode, setViewMode] = useState<'TABLE_10' | 'DENSE_HEATMAP' | 'CARDS'>('TABLE_10');
   const [selectedRange, setSelectedRange] = useState<string>('ALL');
+
+  // Bulk Selection & Deletion Mode
+  const [isBulkMode, setIsBulkMode] = useState(false);
+  const [selectedPileIds, setSelectedPileIds] = useState<Set<string>>(new Set());
+  const [isDeletingBulk, setIsDeletingBulk] = useState(false);
+
+  // + Add Pile Modal State
+  const [showAddModal, setShowAddModal] = useState(false);
+  const [newPileNo, setNewPileNo] = useState('');
+  const [newGridLine, setNewGridLine] = useState('');
+  const [newBuilding, setNewBuilding] = useState('Building A');
+  const [isAddingPile, setIsAddingPile] = useState(false);
+
+  // Edit Pile Modal State
+  const [isEditingPile, setIsEditingPile] = useState(false);
+  const [editPileNo, setEditPileNo] = useState('');
+  const [editGridLine, setEditGridLine] = useState('');
+  const [editBuilding, setEditBuilding] = useState('');
+  const [editStatus, setEditStatus] = useState('');
+  const [isSavingEdit, setIsSavingEdit] = useState(false);
+
+  // Batch Generator Modal State
   const [showBatchModal, setShowBatchModal] = useState(false);
   const [batchCount, setBatchCount] = useState('300');
   const [batchPrefix, setBatchPrefix] = useState('P-');
@@ -104,7 +136,7 @@ export default function PileNumberMatrix({ initialPiles }: PileNumberMatrixProps
     return ranges;
   }, [totalCount]);
 
-  // Filtered piles with Range and Search
+  // Filtered piles with Range, Building, and Search
   const filteredPiles = useMemo(() => {
     return piles.filter((pile, index) => {
       // Range filter (1-based index)
@@ -114,6 +146,11 @@ export default function PileNumberMatrix({ initialPiles }: PileNumberMatrixProps
         const end = parseInt(endStr, 10);
         const pileIndex = index + 1;
         if (pileIndex < start || pileIndex > end) return false;
+      }
+
+      // Building filter
+      if (filterBuilding !== 'ALL' && (pile.building || 'Building A') !== filterBuilding) {
+        return false;
       }
 
       // Status filter
@@ -131,7 +168,7 @@ export default function PileNumberMatrix({ initialPiles }: PileNumberMatrixProps
 
       return true;
     });
-  }, [piles, filterStatus, searchQuery, selectedRange]);
+  }, [piles, filterStatus, filterBuilding, searchQuery, selectedRange]);
 
   // Group piles into chunks of 10 for Table-10 Grid view
   const rowsOf10 = useMemo(() => {
@@ -179,6 +216,181 @@ export default function PileNumberMatrix({ initialPiles }: PileNumberMatrixProps
       badge: 'bg-slate-100 text-slate-500',
       text: 'รอตอก',
     };
+  };
+
+  // Unique building list
+  const buildingList = useMemo(() => {
+    const set = new Set<string>();
+    piles.forEach((p) => {
+      if (p.building) set.add(p.building);
+    });
+    return Array.from(set);
+  }, [piles]);
+
+  // Open Edit Modal with pile values
+  const handleOpenEdit = (pile: PileData) => {
+    setEditPileNo(pile.pileNo);
+    setEditGridLine(pile.gridLine);
+    setEditBuilding(pile.building || 'Building A');
+    setEditStatus(pile.status);
+    setIsEditingPile(true);
+  };
+
+  // Save Edit Pile
+  const handleSaveEdit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!selectedPile) return;
+
+    try {
+      setIsSavingEdit(true);
+      const res = await fetch(`/api/piles/${selectedPile.id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          pileNo: editPileNo,
+          gridLine: editGridLine,
+          building: editBuilding,
+          status: editStatus,
+        }),
+      });
+
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Failed to update pile');
+
+      setPiles((prev) =>
+        prev.map((p) => (p.id === selectedPile.id ? { ...p, ...data.pile } : p))
+      );
+      setSelectedPile((prev) => (prev ? { ...prev, ...data.pile } : null));
+      setIsEditingPile(false);
+      router.refresh();
+    } catch (err: any) {
+      alert(err.message);
+    } finally {
+      setIsSavingEdit(false);
+    }
+  };
+
+  // Handle Add Single Pile
+  const handleAddSinglePile = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!newPileNo.trim() || !newGridLine.trim()) {
+      alert('กรุณาระบุรหัสเสาเข็มและ Grid Line');
+      return;
+    }
+
+    try {
+      setIsAddingPile(true);
+      const projectRes = await fetch('/api/projects');
+      const projects = await projectRes.json();
+      const currentProject = projects[0];
+
+      if (!currentProject) throw new Error('No project found');
+
+      const res = await fetch('/api/piles', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          projectId: currentProject.id,
+          criteriaId: currentProject.criteria?.[0]?.id || null,
+          pileNo: newPileNo.trim(),
+          gridLine: newGridLine.trim(),
+          building: newBuilding.trim(),
+        }),
+      });
+
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Failed to add pile');
+
+      setShowAddModal(false);
+      setNewPileNo('');
+      setNewGridLine('');
+      router.refresh();
+    } catch (err: any) {
+      alert(err.message);
+    } finally {
+      setIsAddingPile(false);
+    }
+  };
+
+  // Toggle selection for bulk mode
+  const toggleSelectPile = (id: string, e: React.MouseEvent) => {
+    e.stopPropagation();
+    setSelectedPileIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  };
+
+  const handleSelectAllFiltered = () => {
+    setSelectedPileIds(new Set(filteredPiles.map((p) => p.id)));
+  };
+
+  const handleDeselectAll = () => {
+    setSelectedPileIds(new Set());
+  };
+
+  // Bulk Delete: Selected
+  const handleDeleteSelected = async () => {
+    const ids = Array.from(selectedPileIds);
+    if (ids.length === 0) return;
+
+    const confirmed = window.confirm(
+      `⚠️ ยืนยันการลบเสาเข็มที่เลือกจำนวน ${ids.length} ต้น หรือไม่?\nข้อมูลการตอกและผลตรวจ QC ทั้งหมดจะถูกลบไปด้วยถาวร`
+    );
+    if (!confirmed) return;
+
+    try {
+      setIsDeletingBulk(true);
+      const res = await fetch('/api/piles/batch', {
+        method: 'DELETE',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          mode: 'SELECTED',
+          ids,
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Failed to delete selected piles');
+
+      setSelectedPileIds(new Set());
+      setIsBulkMode(false);
+      router.refresh();
+    } catch (err: any) {
+      alert(err.message);
+    } finally {
+      setIsDeletingBulk(false);
+    }
+  };
+
+  // Bulk Delete: All Pending
+  const handleDeleteAllPending = async () => {
+    const confirmed = window.confirm(
+      `⚠️ ยืนยันการลบเสาเข็มที่ "ยังไม่ได้ตอก" ทั้งหมด (${notDrivenCount} ต้น) หรือไม่?\nเสาเข็มที่ตอกแล้วหรือมีผล QC จะไม่ถูกลบ`
+    );
+    if (!confirmed) return;
+
+    try {
+      setIsDeletingBulk(true);
+      const res = await fetch('/api/piles/batch', {
+        method: 'DELETE',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          mode: 'ALL_PENDING',
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Failed to delete pending piles');
+
+      setSelectedPileIds(new Set());
+      setIsBulkMode(false);
+      router.refresh();
+    } catch (err: any) {
+      alert(err.message);
+    } finally {
+      setIsDeletingBulk(false);
+    }
   };
 
   // Handle batch generate submission
@@ -380,67 +592,163 @@ export default function PileNumberMatrix({ initialPiles }: PileNumberMatrixProps
                 🔴 มีปัญหา ({failedCount})
               </button>
             )}
+            {/* Building Filter Dropdown */}
+            {buildingList.length > 0 && (
+              <select
+                value={filterBuilding}
+                onChange={(e) => setFilterBuilding(e.target.value)}
+                className="bg-slate-50 border border-slate-200 rounded-lg text-xs font-bold px-2.5 py-1.5 text-slate-700 focus:outline-none focus:ring-1 focus:ring-indigo-500"
+              >
+                <option value="ALL">🏢 ทุกอาคาร / โซน</option>
+                {buildingList.map((bldg) => (
+                  <option key={bldg} value={bldg}>
+                    🏢 {bldg}
+                  </option>
+                ))}
+              </select>
+            )}
           </div>
         </div>
+      </div>
 
-          {/* Right Tools: View Mode Toggle & Batch Setup */}
-          <div className="flex items-center gap-2">
-            {/* View Mode Switcher */}
-            <div className="flex items-center bg-slate-100 p-1 rounded-lg gap-1 text-xs">
-              <button
-                type="button"
-                onClick={() => setViewMode('TABLE_10')}
-                title="ตารางกริดแถวละ 10 ต้น (อ่านง่ายมาตรฐาน)"
-                className={`flex items-center gap-1 px-2.5 py-1 rounded-md font-bold transition ${
-                  viewMode === 'TABLE_10'
-                    ? 'bg-white text-slate-900 shadow-xs'
-                    : 'text-slate-600 hover:text-slate-900'
-                }`}
-              >
-                <TableIcon className="w-3.5 h-3.5" />
-                <span className="hidden sm:inline">ตาราง 10 คอลัมน์</span>
-              </button>
+        {/* Action Buttons: + Add Pile, Bulk Actions, Batch Setup, View Mode */}
+        <div className="flex flex-wrap items-center justify-between gap-2 pt-1 border-t border-slate-100">
+          <div className="flex flex-wrap items-center gap-2">
+            {/* + Add Single Pile Button */}
+            <button
+              type="button"
+              onClick={() => {
+                setNewPileNo(`P-${String(totalCount + 1).padStart(3, '0')}`);
+                setNewGridLine('A-1');
+                setShowAddModal(true);
+              }}
+              className="inline-flex items-center gap-1.5 bg-amber-500 hover:bg-amber-600 text-slate-950 px-3 py-1.5 rounded-lg text-xs font-bold transition shadow-xs"
+            >
+              <Plus className="w-3.5 h-3.5" />
+              <span>+ เพิ่มเสาเข็ม</span>
+            </button>
 
-              <button
-                type="button"
-                onClick={() => setViewMode('DENSE_HEATMAP')}
-                title="ตารางกริดความหนาแน่นสูง (สำหรับเข็ม 300+ ต้น)"
-                className={`flex items-center gap-1 px-2.5 py-1 rounded-md font-bold transition ${
-                  viewMode === 'DENSE_HEATMAP'
-                    ? 'bg-white text-slate-900 shadow-xs'
-                    : 'text-slate-600 hover:text-slate-900'
-                }`}
-              >
-                <Grid3X3 className="w-3.5 h-3.5" />
-                <span className="hidden sm:inline">กริด 300+ แน่นพิเศษ</span>
-              </button>
+            {/* Bulk Delete Toggle Button */}
+            <button
+              type="button"
+              onClick={() => {
+                setIsBulkMode(!isBulkMode);
+                setSelectedPileIds(new Set());
+              }}
+              className={`inline-flex items-center gap-1 px-3 py-1.5 rounded-lg text-xs font-bold border transition ${
+                isBulkMode
+                  ? 'bg-rose-50 border-rose-300 text-rose-700 shadow-xs'
+                  : 'bg-white border-slate-200 text-slate-700 hover:bg-slate-50'
+              }`}
+            >
+              <Trash2 className="w-3.5 h-3.5" />
+              <span>{isBulkMode ? 'ปิดจัดการลบ' : 'ลบแบบกลุ่ม'}</span>
+            </button>
 
-              <button
-                type="button"
-                onClick={() => setViewMode('CARDS')}
-                title="การ์ดขยายรายละเอียด"
-                className={`flex items-center gap-1 px-2.5 py-1 rounded-md font-bold transition ${
-                  viewMode === 'CARDS'
-                    ? 'bg-white text-slate-900 shadow-xs'
-                    : 'text-slate-600 hover:text-slate-900'
-                }`}
-              >
-                <LayoutGrid className="w-3.5 h-3.5" />
-                <span className="hidden sm:inline">การ์ดใหญ่</span>
-              </button>
-            </div>
-
-            {/* Action Button: Batch Generator */}
+            {/* Batch Setup Button */}
             <button
               type="button"
               onClick={() => setShowBatchModal(true)}
-              className="inline-flex items-center gap-1.5 bg-indigo-600 hover:bg-indigo-700 text-white px-3.5 py-1.5 rounded-lg text-xs font-bold transition shadow-xs whitespace-nowrap"
+              className="inline-flex items-center gap-1.5 bg-indigo-600 hover:bg-indigo-700 text-white px-3 py-1.5 rounded-lg text-xs font-bold transition shadow-xs whitespace-nowrap"
             >
               <Settings className="w-3.5 h-3.5" />
-              <span>ระบุจำนวนเข็ม (300+)</span>
+              <span className="hidden sm:inline">ตั้งค่าจำนวนเข็ม (300+)</span>
+              <span className="sm:hidden">ชุด 300+</span>
+            </button>
+          </div>
+
+          {/* View Mode Switcher */}
+          <div className="flex items-center bg-slate-100 p-1 rounded-lg gap-1 text-xs">
+            <button
+              type="button"
+              onClick={() => setViewMode('TABLE_10')}
+              title="ตารางกริดแถวละ 10 ต้น (อ่านง่ายมาตรฐาน)"
+              className={`flex items-center gap-1 px-2.5 py-1 rounded-md font-bold transition ${
+                viewMode === 'TABLE_10'
+                  ? 'bg-white text-slate-900 shadow-xs'
+                  : 'text-slate-600 hover:text-slate-900'
+              }`}
+            >
+              <TableIcon className="w-3.5 h-3.5" />
+              <span className="hidden sm:inline">ตาราง 10 คอลัมน์</span>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => setViewMode('DENSE_HEATMAP')}
+              title="ตารางกริดความหนาแน่นสูง (สำหรับเข็ม 300+ ต้น)"
+              className={`flex items-center gap-1 px-2.5 py-1 rounded-md font-bold transition ${
+                viewMode === 'DENSE_HEATMAP'
+                  ? 'bg-white text-slate-900 shadow-xs'
+                  : 'text-slate-600 hover:text-slate-900'
+              }`}
+            >
+              <Grid3X3 className="w-3.5 h-3.5" />
+              <span className="hidden sm:inline">กริด 300+ แน่นพิเศษ</span>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => setViewMode('CARDS')}
+              title="การ์ดขยายรายละเอียด"
+              className={`flex items-center gap-1 px-2.5 py-1 rounded-md font-bold transition ${
+                viewMode === 'CARDS'
+                  ? 'bg-white text-slate-900 shadow-xs'
+                  : 'text-slate-600 hover:text-slate-900'
+              }`}
+            >
+              <LayoutGrid className="w-3.5 h-3.5" />
+              <span className="hidden sm:inline">การ์ดใหญ่</span>
             </button>
           </div>
         </div>
+
+        {/* Bulk Action Sub-bar when isBulkMode is Active */}
+        {isBulkMode && (
+          <div className="bg-rose-50/70 border border-rose-200 rounded-xl p-3 flex flex-wrap items-center justify-between gap-2 animate-in fade-in">
+            <div className="flex items-center gap-2 text-xs font-bold text-rose-900">
+              <CheckSquare className="w-4 h-4 text-rose-600" />
+              <span>โหมดลบแบบกลุ่ม: เลือกแล้ว {selectedPileIds.size} ต้น</span>
+              <button
+                type="button"
+                onClick={handleSelectAllFiltered}
+                className="underline text-indigo-700 hover:text-indigo-900 ml-2"
+              >
+                เลือกทั้งหมด ({filteredPiles.length})
+              </button>
+              {selectedPileIds.size > 0 && (
+                <button
+                  type="button"
+                  onClick={handleDeselectAll}
+                  className="underline text-slate-600 hover:text-slate-800"
+                >
+                  ยกเลิกเลือก
+                </button>
+              )}
+            </div>
+
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={handleDeleteSelected}
+                disabled={selectedPileIds.size === 0 || isDeletingBulk}
+                className="inline-flex items-center gap-1 bg-rose-600 hover:bg-rose-700 text-white px-3 py-1.5 rounded-lg text-xs font-bold transition disabled:opacity-40"
+              >
+                <Trash2 className="w-3.5 h-3.5" />
+                <span>ลบที่เลือก ({selectedPileIds.size})</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={handleDeleteAllPending}
+                disabled={notDrivenCount === 0 || isDeletingBulk}
+                className="inline-flex items-center gap-1 bg-slate-800 hover:bg-slate-900 text-white px-3 py-1.5 rounded-lg text-xs font-bold transition disabled:opacity-40"
+              >
+                <span>ลบที่ยังไม่ตอกทั้งหมด ({notDrivenCount})</span>
+              </button>
+            </div>
+          </div>
+        )}
 
         {/* Quick Range Jump (If more than 50 piles) */}
         {rangeOptions.length > 0 && (
@@ -539,15 +847,35 @@ export default function PileNumberMatrix({ initialPiles }: PileNumberMatrixProps
                           }
                           const style = getPileStatusStyle(pile);
                           const cleanNum = pile.pileNo.replace(/^[A-Za-z]+-0*/, '') || pile.pileNo;
+                          const isSelected = selectedPileIds.has(pile.id);
 
                           return (
                             <td key={pile.id} className="p-1">
                               <button
                                 type="button"
-                                onClick={() => setSelectedPile(pile)}
+                                onClick={(e) => {
+                                  if (isBulkMode) {
+                                    toggleSelectPile(pile.id, e);
+                                  } else {
+                                    setSelectedPile(pile);
+                                  }
+                                }}
                                 title={`${pile.pileNo} (${pile.gridLine}) - ${style.text}`}
-                                className={`w-full py-2 px-1 rounded-lg border-2 flex flex-col items-center justify-center transition-transform active:scale-95 cursor-pointer ${style.container}`}
+                                className={`relative w-full py-2 px-1 rounded-lg border-2 flex flex-col items-center justify-center transition-transform active:scale-95 cursor-pointer ${
+                                  isBulkMode && isSelected
+                                    ? 'bg-rose-100 border-rose-500 text-rose-950 shadow-md ring-2 ring-rose-400 font-bold'
+                                    : style.container
+                                }`}
                               >
+                                {isBulkMode && (
+                                  <span className="absolute top-1 right-1">
+                                    {isSelected ? (
+                                      <CheckSquare className="w-3.5 h-3.5 text-rose-600" />
+                                    ) : (
+                                      <Square className="w-3.5 h-3.5 text-slate-400" />
+                                    )}
+                                  </span>
+                                )}
                                 <span className="text-[9px] font-mono opacity-80 leading-none">
                                   {pile.gridLine}
                                 </span>
@@ -574,15 +902,29 @@ export default function PileNumberMatrix({ initialPiles }: PileNumberMatrixProps
                 {filteredPiles.map((pile) => {
                   const style = getPileStatusStyle(pile);
                   const cleanNum = pile.pileNo.replace(/^[A-Za-z]+-0*/, '') || pile.pileNo;
+                  const isSelected = selectedPileIds.has(pile.id);
 
                   return (
                     <button
                       key={pile.id}
                       type="button"
-                      onClick={() => setSelectedPile(pile)}
+                      onClick={(e) => {
+                        if (isBulkMode) {
+                          toggleSelectPile(pile.id, e);
+                        } else {
+                          setSelectedPile(pile);
+                        }
+                      }}
                       title={`${pile.pileNo} (${pile.gridLine}) - ${style.text}`}
-                      className={`aspect-square p-1 rounded-md border-2 flex flex-col items-center justify-center transition-all hover:scale-110 active:scale-95 cursor-pointer text-center ${style.container}`}
+                      className={`relative aspect-square p-1 rounded-md border-2 flex flex-col items-center justify-center transition-all hover:scale-110 active:scale-95 cursor-pointer text-center ${
+                        isBulkMode && isSelected
+                          ? 'bg-rose-200 border-rose-600 text-rose-950 shadow-md ring-2 ring-rose-500'
+                          : style.container
+                      }`}
                     >
+                      {isBulkMode && isSelected && (
+                        <span className="absolute -top-1 -right-1 w-2.5 h-2.5 rounded-full bg-rose-600 border border-white"></span>
+                      )}
                       <span className="text-[10px] font-black font-mono leading-none">
                         {cleanNum}
                       </span>
@@ -600,13 +942,34 @@ export default function PileNumberMatrix({ initialPiles }: PileNumberMatrixProps
               <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-6 lg:grid-cols-8 gap-3">
                 {filteredPiles.map((pile) => {
                   const style = getPileStatusStyle(pile);
+                  const isSelected = selectedPileIds.has(pile.id);
+
                   return (
                     <button
                       key={pile.id}
                       type="button"
-                      onClick={() => setSelectedPile(pile)}
-                      className={`p-3 rounded-xl border-2 flex flex-col items-center justify-between text-center transition-transform active:scale-95 cursor-pointer min-h-[85px] ${style.container}`}
+                      onClick={(e) => {
+                        if (isBulkMode) {
+                          toggleSelectPile(pile.id, e);
+                        } else {
+                          setSelectedPile(pile);
+                        }
+                      }}
+                      className={`relative p-3 rounded-xl border-2 flex flex-col items-center justify-between text-center transition-transform active:scale-95 cursor-pointer min-h-[85px] ${
+                        isBulkMode && isSelected
+                          ? 'bg-rose-50 border-rose-400 text-rose-900 shadow-md ring-2 ring-rose-300'
+                          : style.container
+                      }`}
                     >
+                      {isBulkMode && (
+                        <div className="absolute top-2 right-2">
+                          {isSelected ? (
+                            <CheckSquare className="w-4 h-4 text-rose-600" />
+                          ) : (
+                            <Square className="w-4 h-4 text-slate-400" />
+                          )}
+                        </div>
+                      )}
                       <span className="text-[10px] font-mono tracking-tight opacity-80 uppercase">
                         {pile.gridLine}
                       </span>
@@ -739,6 +1102,15 @@ export default function PileNumberMatrix({ initialPiles }: PileNumberMatrixProps
                     <ShieldCheck className="w-3.5 h-3.5" />
                     <span>ตรวจ QC</span>
                   </Link>
+
+                  <button
+                    type="button"
+                    onClick={() => handleOpenEdit(selectedPile)}
+                    className="inline-flex items-center gap-1.5 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 px-3 py-2 rounded-lg font-bold transition border border-indigo-200"
+                  >
+                    <Edit3 className="w-3.5 h-3.5" />
+                    <span>แก้ไขข้อมูล</span>
+                  </button>
                 </div>
 
                 <DeletePileButton
@@ -849,6 +1221,184 @@ export default function PileNumberMatrix({ initialPiles }: PileNumberMatrixProps
                 >
                   <Sparkles className="w-3.5 h-3.5" />
                   <span>{isSubmittingBatch ? 'กำลังสร้าง...' : 'สร้างเสาเข็มทันที'}</span>
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* 6. Add Single Pile Modal */}
+      {showAddModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs animate-in fade-in duration-150">
+          <div className="bg-white rounded-2xl shadow-xl border border-slate-200 w-full max-w-md overflow-hidden animate-in zoom-in-95 duration-150">
+            <div className="bg-amber-500 text-slate-950 p-4 flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <Plus className="w-5 h-5" />
+                <h3 className="text-base font-black">เพิ่มเสาเข็มต้นเดี่ยว (+ Add Pile)</h3>
+              </div>
+              <button
+                onClick={() => setShowAddModal(false)}
+                className="text-slate-800 hover:text-slate-950 p-1 rounded-lg"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <form onSubmit={handleAddSinglePile} className="p-5 space-y-4">
+              <div>
+                <label className="block text-xs font-bold text-slate-700 mb-1">
+                  รหัส / หมายเลขเสาเข็ม (Pile No.)
+                </label>
+                <input
+                  type="text"
+                  required
+                  value={newPileNo}
+                  onChange={(e) => setNewPileNo(e.target.value)}
+                  className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-sm font-bold font-mono focus:bg-white focus:outline-none focus:ring-2 focus:ring-amber-500"
+                  placeholder="เช่น P-302, P-A15"
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold text-slate-700 mb-1">
+                  ตำแหน่งกริดไลน์ (Grid Line)
+                </label>
+                <input
+                  type="text"
+                  required
+                  value={newGridLine}
+                  onChange={(e) => setNewGridLine(e.target.value)}
+                  className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-sm font-bold font-mono focus:bg-white focus:outline-none focus:ring-2 focus:ring-amber-500"
+                  placeholder="เช่น A-1, B-3/4"
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold text-slate-700 mb-1">
+                  อาคาร / โซน (Building / Zone)
+                </label>
+                <input
+                  type="text"
+                  value={newBuilding}
+                  onChange={(e) => setNewBuilding(e.target.value)}
+                  className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-sm font-bold focus:bg-white focus:outline-none focus:ring-2 focus:ring-amber-500"
+                  placeholder="เช่น Building A, Zone East"
+                />
+              </div>
+
+              <div className="pt-2 flex items-center justify-end gap-2">
+                <button
+                  type="button"
+                  onClick={() => setShowAddModal(false)}
+                  disabled={isAddingPile}
+                  className="px-4 py-2 rounded-lg text-xs font-bold text-slate-600 hover:bg-slate-100 transition"
+                >
+                  ยกเลิก
+                </button>
+                <button
+                  type="submit"
+                  disabled={isAddingPile}
+                  className="px-4 py-2 rounded-lg text-xs font-bold bg-amber-500 hover:bg-amber-600 text-slate-950 transition shadow-sm disabled:opacity-50 inline-flex items-center gap-1.5"
+                >
+                  <Plus className="w-3.5 h-3.5" />
+                  <span>{isAddingPile ? 'กำลังบันทึก...' : 'เพิ่มเสาเข็ม'}</span>
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* 7. Edit Pile Modal */}
+      {isEditingPile && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs animate-in fade-in duration-150">
+          <div className="bg-white rounded-2xl shadow-xl border border-slate-200 w-full max-w-md overflow-hidden animate-in zoom-in-95 duration-150">
+            <div className="bg-indigo-700 text-white p-4 flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <Edit3 className="w-5 h-5" />
+                <h3 className="text-base font-black">แก้ไขข้อมูลเสาเข็ม (Edit Pile Details)</h3>
+              </div>
+              <button
+                onClick={() => setIsEditingPile(false)}
+                className="text-indigo-200 hover:text-white p-1 rounded-lg"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <form onSubmit={handleSaveEdit} className="p-5 space-y-4">
+              <div>
+                <label className="block text-xs font-bold text-slate-700 mb-1">
+                  รหัส / หมายเลขเสาเข็ม (Pile No.)
+                </label>
+                <input
+                  type="text"
+                  required
+                  value={editPileNo}
+                  onChange={(e) => setEditPileNo(e.target.value)}
+                  className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-sm font-bold font-mono focus:bg-white focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold text-slate-700 mb-1">
+                  ตำแหน่งกริดไลน์ (Grid Line)
+                </label>
+                <input
+                  type="text"
+                  required
+                  value={editGridLine}
+                  onChange={(e) => setEditGridLine(e.target.value)}
+                  className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-sm font-bold font-mono focus:bg-white focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold text-slate-700 mb-1">
+                  อาคาร / โซน (Building / Zone)
+                </label>
+                <input
+                  type="text"
+                  value={editBuilding}
+                  onChange={(e) => setEditBuilding(e.target.value)}
+                  className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-sm font-bold focus:bg-white focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold text-slate-700 mb-1">
+                  สถานะ (Status)
+                </label>
+                <select
+                  value={editStatus}
+                  onChange={(e) => setEditStatus(e.target.value)}
+                  className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-sm font-bold focus:bg-white focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                >
+                  <option value="PENDING">PENDING (ยังไม่ตอก)</option>
+                  <option value="DRIVING">DRIVING (กำลังตอก)</option>
+                  <option value="DRIVEN">DRIVEN (ตอกเสร็จแล้ว)</option>
+                  <option value="APPROVED">APPROVED (ผ่านการตรวจ)</option>
+                  <option value="REJECTED">REJECTED (ไม่ผ่าน/รอแก้ไข)</option>
+                </select>
+              </div>
+
+              <div className="pt-2 flex items-center justify-end gap-2">
+                <button
+                  type="button"
+                  onClick={() => setIsEditingPile(false)}
+                  disabled={isSavingEdit}
+                  className="px-4 py-2 rounded-lg text-xs font-bold text-slate-600 hover:bg-slate-100 transition"
+                >
+                  ยกเลิก
+                </button>
+                <button
+                  type="submit"
+                  disabled={isSavingEdit}
+                  className="px-4 py-2 rounded-lg text-xs font-bold bg-indigo-600 hover:bg-indigo-700 text-white transition shadow-sm disabled:opacity-50 inline-flex items-center gap-1.5"
+                >
+                  <Save className="w-3.5 h-3.5" />
+                  <span>{isSavingEdit ? 'กำลังบันทึก...' : 'บันทึกการแก้ไข'}</span>
                 </button>
               </div>
             </form>

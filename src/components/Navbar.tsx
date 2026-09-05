@@ -3,6 +3,7 @@
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { Calculator, ClipboardList, ShieldCheck, LayoutDashboard, FileSpreadsheet, HardHat } from 'lucide-react';
+import ProjectSwitcher from './navigation/ProjectSwitcher';
 
 export default function Navbar() {
   const pathname = usePathname();
@@ -52,10 +53,9 @@ export default function Navbar() {
             })}
           </nav>
 
-          {/* Project Badge */}
-          <div className="hidden sm:flex items-center gap-2 bg-slate-800 px-3 py-1.5 rounded-full border border-slate-700">
-            <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span>
-            <span className="text-xs font-medium text-slate-300">GHT-2026 : Rama 9</span>
+          {/* Project Switcher */}
+          <div className="flex items-center">
+            <ProjectSwitcher />
           </div>
         </div>
       </div>

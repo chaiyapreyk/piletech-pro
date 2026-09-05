@@ -100,3 +100,64 @@ export async function POST(request: Request) {
     );
   }
 }
+
+export async function DELETE(request: Request) {
+  try {
+    const body = await request.json();
+    const { mode, ids, projectId } = body;
+
+    const project = projectId
+      ? await prisma.project.findUnique({ where: { id: projectId } })
+      : await prisma.project.findFirst();
+
+    if (!project) {
+      return NextResponse.json({ error: 'ไม่พบโครงการ' }, { status: 404 });
+    }
+
+    let deletedCount = 0;
+
+    if (mode === 'SELECTED' && Array.isArray(ids) && ids.length > 0) {
+      const res = await prisma.pile.deleteMany({
+        where: {
+          id: { in: ids },
+          projectId: project.id,
+        },
+      });
+      deletedCount = res.count;
+    } else if (mode === 'ALL_PENDING') {
+      const res = await prisma.pile.deleteMany({
+        where: {
+          projectId: project.id,
+          drivingRecord: null,
+        },
+      });
+      deletedCount = res.count;
+    } else if (mode === 'ALL') {
+      const res = await prisma.pile.deleteMany({
+        where: {
+          projectId: project.id,
+        },
+      });
+      deletedCount = res.count;
+    } else {
+      return NextResponse.json({ error: 'โหมดการลบไม่ถูกต้อง' }, { status: 400 });
+    }
+
+    const totalNow = await prisma.pile.count({
+      where: { projectId: project.id },
+    });
+
+    return NextResponse.json({
+      success: true,
+      deletedCount,
+      totalPiles: totalNow,
+      message: `ลบเสาเข็มสำเร็จ ${deletedCount} ต้น (คงเหลือ ${totalNow} ต้น)`,
+    });
+  } catch (error) {
+    console.error('Failed to bulk delete piles:', error);
+    return NextResponse.json(
+      { error: 'เกิดข้อผิดพลาดในการลบเสาเข็มแบบกลุ่ม' },
+      { status: 500 }
+    );
+  }
+}

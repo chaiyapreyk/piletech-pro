@@ -20,6 +20,12 @@
 | Task 16: Standalone Git Repository & GitHub Push | DONE | Created standalone repo, pushed main to https://github.com/chaiyapreyk/piletech-pro |
 | Task 17: Total Piles Config & Number Matrix Grid | DONE | Configure total piles, batch generator, visual color-coded number grid |
 | Task 18: High-Density 300+ Pile Grid Matrix & Range Navigation | DONE | Ultra-dense grid table (10/20 columns per row, compact cells, range jump tabs) for 300+ piles |
+| Task 19: Database Schema Update & Project API | DONE | Add building to Pile, recordUnit & recordScope to DrivingRecord, /api/projects |
+| Task 20: Bulk Delete & Pile Edit Backend APIs | DONE | DELETE in /api/piles/batch (selected, pending, all) & PATCH in /api/piles/[id] |
+| Task 21: Bulk Delete & + Add Pile UI in Matrix | IN_PROGRESS | Checkbox selection, bulk delete buttons, + Add single pile modal, edit modal |
+| Task 22: Record Blow/ft & Configurable Scope (Last 20 ft) | PENDING | Unit toggle m/ft, scope window, offset plotting in logger & chart |
+| Task 23: Multi-Project & Building Switcher UI | PENDING | Switcher in header, new project/building modal |
+| Task 24: End-to-End Verification & Git Push | PENDING | Vitest, curl verification, commit and push to GitHub |
 
 
 
