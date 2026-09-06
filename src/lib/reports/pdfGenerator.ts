@@ -55,7 +55,7 @@ export function exportDailyLogPDF(
     `${r.safeWorkingLoadT} T`,
     `${r.targetSet10BlowsCm} cm`,
     r.drivenLengthM ? `${r.drivenLengthM}m (${(r.drivenLengthM * 3.281).toFixed(0)}ft)` : '-',
-    r.avgBlowsPerFoot ? `${r.avgBlowsPerFoot}ft / ${r.avgBlowsPerMeter}m` : '-',
+    r.avgBlowsPerFoot ? `${r.avgBlowsPerFoot} blw/ft (${r.avgBlowsPerMeter} blw/m)` : '-',
     r.measuredLast10Cm ? `${r.measuredLast10Cm} cm` : '-',
     r.isSetPassed === true ? 'PASS' : r.isSetPassed === false ? 'RE-DRIVE' : 'PENDING',
     r.netDeviationCm !== undefined && r.netDeviationCm !== null ? `${r.netDeviationCm} cm` : '-',

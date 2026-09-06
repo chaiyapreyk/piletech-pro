@@ -182,7 +182,7 @@ export default function ReportExporter({
                   <td className="p-2 font-sans text-slate-600">{r.pileType}</td>
                   <td className="p-2 text-center">{r.safeWorkingLoadT} T</td>
                   <td className="p-2 text-center font-bold text-amber-700">
-                    {r.avgBlowsPerFoot ? `${r.avgBlowsPerFoot} blw/ft (${r.avgBlowsPerMeter} m)` : '-'}
+                    {r.avgBlowsPerFoot ? `${r.avgBlowsPerFoot} blw/ft (≈ ${r.avgBlowsPerMeter} blw/m)` : '-'}
                   </td>
                   <td className="p-2 text-center">{r.targetSet10BlowsCm} cm</td>
                   <td className="p-2 text-center font-bold">
