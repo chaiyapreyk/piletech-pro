@@ -27,6 +27,8 @@ interface PileData {
   gridLine: string;
   status: string;
   criteria?: {
+    id?: string;
+    name?: string | null;
     pileType: string;
     safeWorkingLoadT: number;
     targetSet10BlowsCm: number;
@@ -218,9 +220,28 @@ export default function DrivingRecordForm({ pile }: { pile: PileData }) {
             <h1 className="text-2xl font-black text-slate-800">
               บันทึกการตอก: {pile.pileNo} (Grid: {pile.gridLine})
             </h1>
-            <p className="text-xs text-slate-500 mt-0.5">
-              หน้าตัด: <strong>{pile.criteria?.pileType || 'I-0.26x0.26m'}</strong> | Safe Load ออกแบบ: <strong>{pile.criteria?.safeWorkingLoadT} ตัน</strong>
-            </p>
+            <div className="flex items-center gap-2 flex-wrap text-xs text-slate-600 mt-1">
+              <span>
+                รายการคำนวณ / สเปก: <strong>{pile.criteria?.name || pile.criteria?.pileType || 'I-0.26x0.26m'}</strong>
+              </span>
+              <span className="text-slate-300">|</span>
+              <span>
+                Safe Load ออกแบบ: <strong>{pile.criteria?.safeWorkingLoadT || 30} ตัน</strong>
+              </span>
+              {pile.criteria?.id && (
+                <>
+                  <span className="text-slate-300">|</span>
+                  <Link
+                    href={`/calculator?criteriaId=${pile.criteria.id}`}
+                    target="_blank"
+                    className="text-blue-600 hover:text-blue-800 underline font-semibold inline-flex items-center gap-0.5"
+                    title="เปิดหน้ารายการคำนวณ Hiley ของสเปกนี้"
+                  >
+                    [ดูรายการคำนวณ Hiley]
+                  </Link>
+                </>
+              )}
+            </div>
           </div>
 
           {/* Target Set Box */}

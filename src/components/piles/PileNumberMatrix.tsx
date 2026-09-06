@@ -35,7 +35,10 @@ export interface PileData {
   gridLine: string;
   building?: string | null;
   status: string;
+  criteriaId?: string | null;
   criteria?: {
+    id?: string;
+    name?: string | null;
     pileType: string;
     safeWorkingLoadT: number;
     targetSet10BlowsCm: number;
@@ -1051,10 +1054,18 @@ export default function PileNumberMatrix({ initialPiles, projectId }: PileNumber
               {/* Data Grid */}
               <div className="grid grid-cols-2 gap-2">
                 <div className="p-3 bg-slate-50 rounded-lg border border-slate-100">
-                  <span className="text-slate-400 block text-[10px] font-semibold">ประเภทเสาเข็ม</span>
-                  <span className="font-bold text-slate-800 mt-0.5 block">
-                    {selectedPile.criteria?.pileType || 'I-Section 0.26m'}
+                  <span className="text-slate-400 block text-[10px] font-semibold">ประเภทเสาเข็ม / สเปกคำนวณ</span>
+                  <span className="font-bold text-slate-800 mt-0.5 block truncate" title={selectedPile.criteria?.name || selectedPile.criteria?.pileType}>
+                    {selectedPile.criteria?.name || selectedPile.criteria?.pileType || 'I-Section 0.26m'}
                   </span>
+                  {selectedPile.criteria?.id && (
+                    <Link
+                      href={`/calculator?criteriaId=${selectedPile.criteria.id}`}
+                      className="inline-flex items-center gap-1 text-[10px] text-blue-600 hover:text-blue-800 hover:underline font-semibold mt-1"
+                    >
+                      <Sparkles className="w-3 h-3" /> ดูรายการคำนวณ Hiley
+                    </Link>
+                  )}
                 </div>
 
                 <div className="p-3 bg-slate-50 rounded-lg border border-slate-100">

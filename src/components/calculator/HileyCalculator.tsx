@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import {
   calculateHiley,
   calculateBearingCapacityFromSet,
@@ -26,7 +26,52 @@ import {
   Hammer,
   Zap,
   ArrowRight,
+  Building2,
+  Save,
+  FolderPlus,
+  Trash2,
+  Loader2,
+  X,
+  FileCheck,
+  ChevronRight,
 } from 'lucide-react';
+
+export interface ProjectCriteria {
+  id: string;
+  projectId: string;
+  name?: string | null;
+  pileType: string;
+  sectionId?: string | null;
+  safeWorkingLoadT: number;
+  safetyFactor: number;
+  hammerWeightT: number;
+  dropHeightCm: number;
+  pileWeightT?: number | null;
+  cushionCoeffE: number;
+  tempCompressionC: number;
+  concreteStrengthKsc?: number | null;
+  elasticModulusKsc?: number | null;
+  pileSectionAreaCm2?: number | null;
+  pileLengthM?: number | null;
+  hammerEfficiency?: number | null;
+  targetSet10BlowsCm: number;
+  notes?: string | null;
+  _count?: { piles: number };
+  createdAt?: string;
+}
+
+export interface ProjectData {
+  id: string;
+  name: string;
+  code: string;
+  criteria?: ProjectCriteria[];
+  _count?: { piles: number };
+}
+
+interface HileyCalculatorProps {
+  initialProject?: ProjectData | null;
+  initialCriteriaId?: string | null;
+}
 
 interface Preset {
   name: string;
@@ -62,24 +107,24 @@ const PRESETS: Preset[] = [
       dropHeightCm: 45,
       pileWeightTons: 2.3,
       restitutionCoeff: 0.25,
-      tempCompressionCm: 1.4,
+      tempCompressionCm: 1.3,
       concreteStrengthKsc: 350,
       elasticModulusKsc: 280000,
-      pileSectionAreaCm2: 650,
+      pileSectionAreaCm2: 625,
       pileLengthM: 22.0,
     },
   },
   {
     name: 'Square 0.35x0.35m (เข็มสี่เหลี่ยมตัน)',
-    pileType: 'Prestressed Square 0.35m',
+    pileType: 'Prestressed Concrete Square 0.35m',
     data: {
-      safeWorkingLoadTons: 55,
+      safeWorkingLoadTons: 50,
       safetyFactor: 2.5,
       hammerWeightTons: 5.0,
-      dropHeightCm: 45,
-      pileWeightTons: 3.0,
+      dropHeightCm: 50,
+      pileWeightTons: 2.9,
       restitutionCoeff: 0.25,
-      tempCompressionCm: 1.5,
+      tempCompressionCm: 1.4,
       concreteStrengthKsc: 400,
       elasticModulusKsc: 300000,
       pileSectionAreaCm2: 1225,
@@ -105,12 +150,125 @@ const PRESETS: Preset[] = [
   },
 ];
 
-export default function HileyCalculator() {
-  const [selectedPreset, setSelectedPreset] = useState<string>(PRESETS[0].name);
-  const [selectedSectionId, setSelectedSectionId] = useState<string>('I_026');
-  const [input, setInput] = useState<HileyInput>(PRESETS[0].data);
+export default function HileyCalculator({ initialProject, initialCriteriaId }: HileyCalculatorProps = {}) {
+  const [project, setProject] = useState<ProjectData | null>(initialProject ?? null);
+  const [criteriaList, setCriteriaList] = useState<ProjectCriteria[]>(
+    initialProject?.criteria ?? []
+  );
+
+  const targetCriteria = initialCriteriaId
+    ? initialProject?.criteria?.find((c) => c.id === initialCriteriaId)
+    : initialProject?.criteria?.[0];
+  const firstCriteria = targetCriteria || initialProject?.criteria?.[0];
+
+  const getInitialInput = (): HileyInput => {
+    if (firstCriteria) {
+      return {
+        safeWorkingLoadTons: firstCriteria.safeWorkingLoadT,
+        safetyFactor: firstCriteria.safetyFactor,
+        hammerWeightTons: firstCriteria.hammerWeightT,
+        dropHeightCm: firstCriteria.dropHeightCm,
+        pileWeightTons: firstCriteria.pileWeightT || 1.8,
+        restitutionCoeff: firstCriteria.cushionCoeffE,
+        tempCompressionCm: firstCriteria.tempCompressionC,
+        concreteStrengthKsc: firstCriteria.concreteStrengthKsc || 350,
+        elasticModulusKsc: firstCriteria.elasticModulusKsc || 280000,
+        pileSectionAreaCm2: firstCriteria.pileSectionAreaCm2 || 484,
+        pileLengthM: firstCriteria.pileLengthM || 20.0,
+        hammerEfficiency: firstCriteria.hammerEfficiency || undefined,
+      };
+    }
+    return PRESETS[0].data;
+  };
+
+  const [selectedCriteriaId, setSelectedCriteriaId] = useState<string | null>(
+    firstCriteria?.id ?? null
+  );
+  const [selectedPreset, setSelectedPreset] = useState<string>(
+    firstCriteria ? 'CUSTOM' : PRESETS[0].name
+  );
+  const [selectedSectionId, setSelectedSectionId] = useState<string>(
+    firstCriteria?.sectionId || 'I_026'
+  );
+  const [input, setInput] = useState<HileyInput>(getInitialInput);
   const [measuredSet10, setMeasuredSet10] = useState<string>('5.0');
-  const [measuredC, setMeasuredC] = useState<string>('1.2');
+  const [measuredC, setMeasuredC] = useState<string>(
+    (firstCriteria?.tempCompressionC || 1.2).toString()
+  );
+
+  // Modal and toast states
+  const [isSaveModalOpen, setIsSaveModalOpen] = useState(false);
+  const [saveMode, setSaveMode] = useState<'NEW' | 'UPDATE'>('NEW');
+  const [saveName, setSaveName] = useState('');
+  const [savePileType, setSavePileType] = useState(
+    firstCriteria?.pileType || 'Prestressed Concrete I-0.26m'
+  );
+  const [saveNotes, setSaveNotes] = useState('');
+  const [applyToMatchingPiles, setApplyToMatchingPiles] = useState(true);
+  const [applyToAllPiles, setApplyToAllPiles] = useState(false);
+  const [isSaving, setIsSaving] = useState(false);
+  const [toast, setToast] = useState<{ message: string; type: 'success' | 'error' } | null>(null);
+
+  const showToast = (message: string, type: 'success' | 'error' = 'success') => {
+    setToast({ message, type });
+    setTimeout(() => {
+      setToast(null);
+    }, 3500);
+  };
+
+  // Keyboard shortcut: Escape to close modal
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape' && isSaveModalOpen) {
+        setIsSaveModalOpen(false);
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [isSaveModalOpen]);
+
+  const handleLoadCriteria = (crit: ProjectCriteria) => {
+    setSelectedCriteriaId(crit.id);
+    const loadedInput: HileyInput = {
+      safeWorkingLoadTons: crit.safeWorkingLoadT,
+      safetyFactor: crit.safetyFactor,
+      hammerWeightTons: crit.hammerWeightT,
+      dropHeightCm: crit.dropHeightCm,
+      pileWeightTons: crit.pileWeightT || 1.8,
+      restitutionCoeff: crit.cushionCoeffE,
+      tempCompressionCm: crit.tempCompressionC,
+      concreteStrengthKsc: crit.concreteStrengthKsc || 350,
+      elasticModulusKsc: crit.elasticModulusKsc || 280000,
+      pileSectionAreaCm2: crit.pileSectionAreaCm2 || 484,
+      pileLengthM: crit.pileLengthM || 20.0,
+      hammerEfficiency: crit.hammerEfficiency || undefined,
+    };
+    setInput(loadedInput);
+    setMeasuredC(crit.tempCompressionC.toString());
+    setSavePileType(crit.pileType);
+    setSelectedSectionId(crit.sectionId || 'CUSTOM');
+    setSelectedPreset('CUSTOM');
+    showToast(`โหลดรายการคำนวณ "${crit.name || crit.pileType}" เรียบร้อยแล้ว`, 'success');
+  };
+
+  const handleOpenSaveModal = (mode?: 'NEW' | 'UPDATE') => {
+    const currentActiveCrit = criteriaList.find((c) => c.id === selectedCriteriaId);
+    const targetMode = mode ?? (currentActiveCrit ? 'UPDATE' : 'NEW');
+    setSaveMode(targetMode);
+
+    if (targetMode === 'UPDATE' && currentActiveCrit) {
+      setSaveName(currentActiveCrit.name || `${currentActiveCrit.pileType} (Ra ${input.safeWorkingLoadTons}T)`);
+      setSavePileType(currentActiveCrit.pileType);
+      setSaveNotes(currentActiveCrit.notes || '');
+    } else {
+      const sec = getPileSectionById(selectedSectionId);
+      const pileLabel = sec?.label || 'Prestressed Concrete Pile';
+      setSaveName(`${pileLabel} (Ra ${input.safeWorkingLoadTons}T)`);
+      setSavePileType(pileLabel);
+      setSaveNotes('');
+    }
+    setIsSaveModalOpen(true);
+  };
 
   const handlePresetChange = (presetName: string) => {
     setSelectedPreset(presetName);
@@ -211,6 +369,104 @@ export default function HileyCalculator() {
     }
   };
 
+  const handleConfirmSave = async () => {
+    if (!saveName.trim()) {
+      showToast('กรุณาระบุชื่อรายการคำนวณ', 'error');
+      return;
+    }
+
+    setIsSaving(true);
+    try {
+      const payload = {
+        projectId: project?.id,
+        name: saveName.trim(),
+        pileType: savePileType.trim() || 'Prestressed Concrete Pile',
+        sectionId: selectedSectionId,
+        safeWorkingLoadT: input.safeWorkingLoadTons,
+        safetyFactor: input.safetyFactor,
+        hammerWeightT: input.hammerWeightTons,
+        dropHeightCm: input.dropHeightCm,
+        pileWeightT: input.pileWeightTons,
+        cushionCoeffE: input.restitutionCoeff,
+        tempCompressionC: input.tempCompressionCm,
+        concreteStrengthKsc: input.concreteStrengthKsc,
+        elasticModulusKsc: input.elasticModulusKsc,
+        pileSectionAreaCm2: input.pileSectionAreaCm2,
+        pileLengthM: input.pileLengthM,
+        hammerEfficiency: input.hammerEfficiency,
+        targetSet10BlowsCm: Number(hileyResult.targetSet10BlowsCm.toFixed(2)),
+        notes: saveNotes.trim(),
+        applyToAllMatchingType: applyToMatchingPiles,
+        applyToAllPiles: applyToAllPiles,
+      };
+
+      let res: Response;
+      if (saveMode === 'UPDATE' && selectedCriteriaId) {
+        res = await fetch(`/api/criteria/${selectedCriteriaId}`, {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload),
+        });
+      } else {
+        res = await fetch('/api/criteria', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload),
+        });
+      }
+
+      if (!res.ok) {
+        const errData = await res.json();
+        throw new Error(errData.error || 'บันทึกไม่สำเร็จ');
+      }
+
+      const data = await res.json();
+      const savedCrit: ProjectCriteria = data.criteria;
+
+      setCriteriaList((prev) => {
+        const exists = prev.some((c) => c.id === savedCrit.id);
+        if (exists) {
+          return prev.map((c) => (c.id === savedCrit.id ? savedCrit : c));
+        }
+        return [...prev, savedCrit];
+      });
+      setSelectedCriteriaId(savedCrit.id);
+      setIsSaveModalOpen(false);
+
+      const msg = data.updatedPilesCount > 0
+        ? `${data.message} (ผูกกับเสาเข็ม ${data.updatedPilesCount} ต้น)`
+        : data.message;
+      showToast(msg, 'success');
+    } catch (err: any) {
+      console.error('Error saving criteria:', err);
+      showToast(err.message || 'เกิดข้อผิดพลาดในการบันทึก', 'error');
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
+  const handleDeleteCriteria = async (id: string, name: string) => {
+    if (!window.confirm(`⚠️ ยืนยันการลบรายการคำนวณ "${name}" หรือไม่?\n(เสาเข็มที่ผูกอยู่จะถูกปลดออกโดยไม่สูญเสียข้อมูลการตอก)`)) {
+      return;
+    }
+
+    try {
+      const res = await fetch(`/api/criteria/${id}`, { method: 'DELETE' });
+      if (!res.ok) {
+        const errData = await res.json();
+        throw new Error(errData.error || 'ลบไม่สำเร็จ');
+      }
+      setCriteriaList((prev) => prev.filter((c) => c.id !== id));
+      if (selectedCriteriaId === id) {
+        setSelectedCriteriaId(null);
+      }
+      showToast(`ลบรายการคำนวณ "${name}" เรียบร้อยแล้ว`, 'success');
+    } catch (err: any) {
+      console.error('Error deleting criteria:', err);
+      showToast(err.message || 'เกิดข้อผิดพลาดในการลบ', 'error');
+    }
+  };
+
   // Perform calculations
   const hileyResult = useMemo(() => calculateHiley(input), [input]);
   const sensitivityMatrix = useMemo(() => generateSensitivityMatrix(input), [input]);
@@ -224,7 +480,152 @@ export default function HileyCalculator() {
   }, [input, parsedMeasuredSet, parsedMeasuredC]);
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-6 relative">
+      {/* Floating Toast Notification */}
+      {toast && (
+        <div
+          className={`fixed top-5 right-5 z-50 px-4 py-3 rounded-xl shadow-lg border flex items-center gap-2.5 text-xs font-bold transition-all duration-300 animate-in fade-in slide-in-from-top-2 ${
+            toast.type === 'success'
+              ? 'bg-emerald-950/95 text-emerald-100 border-emerald-700 shadow-emerald-950/20'
+              : 'bg-rose-950/95 text-rose-100 border-rose-700 shadow-rose-950/20'
+          }`}
+        >
+          {toast.type === 'success' ? (
+            <CheckCircle2 className="w-4 h-4 text-emerald-400 flex-shrink-0" />
+          ) : (
+            <AlertTriangle className="w-4 h-4 text-rose-400 flex-shrink-0" />
+          )}
+          <span>{toast.message}</span>
+        </div>
+      )}
+
+      {/* Project Calculation Criteria Selector Bar */}
+      <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-4">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-slate-100">
+          <div className="flex items-center gap-2.5">
+            <div className="w-9 h-9 rounded-lg bg-amber-100 text-amber-800 flex items-center justify-center flex-shrink-0">
+              <Building2 className="w-5 h-5" />
+            </div>
+            <div>
+              <div className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">
+                โครงการที่กำลังคำนวณสเปกเสาเข็ม
+              </div>
+              <div className="text-sm font-black text-slate-900">
+                {project ? `${project.code} - ${project.name}` : 'กำลังโหลดโครงการ...'}
+              </div>
+            </div>
+          </div>
+
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={() => handleOpenSaveModal('NEW')}
+              className="inline-flex items-center gap-1.5 bg-amber-500 hover:bg-amber-600 text-slate-950 font-bold px-3 py-2 rounded-lg text-xs shadow-xs transition active:scale-95"
+            >
+              <FolderPlus className="w-3.5 h-3.5" />
+              <span>บันทึกเป็นสเปกใหม่</span>
+            </button>
+            {selectedCriteriaId && (
+              <button
+                type="button"
+                onClick={() => handleOpenSaveModal('UPDATE')}
+                className="inline-flex items-center gap-1.5 bg-slate-800 hover:bg-slate-900 text-white font-bold px-3 py-2 rounded-lg text-xs shadow-xs transition active:scale-95"
+              >
+                <Save className="w-3.5 h-3.5" />
+                <span>บันทึกทับสเปกนี้</span>
+              </button>
+            )}
+          </div>
+        </div>
+
+        {/* Chips / Cards of Saved Calculation Sheets */}
+        <div className="pt-3">
+          <div className="text-xs font-bold text-slate-700 mb-2.5 flex items-center justify-between">
+            <span className="flex items-center gap-1.5">
+              <FileCheck className="w-3.5 h-3.5 text-amber-600" />
+              <span>รายการคำนวณเสาเข็มประจำโครงการ ({criteriaList.length} ขนาด):</span>
+            </span>
+            <span className="text-[11px] font-normal text-slate-400">
+              แตะที่รายการเพื่อดึงสเปกและพารามิเตอร์ทั้งหมดมาใช้งาน
+            </span>
+          </div>
+
+          {criteriaList.length === 0 ? (
+            <div className="p-4 rounded-xl bg-amber-50/70 border border-dashed border-amber-300 text-amber-900 text-xs flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+              <div>
+                <p className="font-bold">โครงการนี้ยังไม่มีรายการคำนวณที่บันทึกไว้</p>
+                <p className="text-[11px] text-amber-800/80 mt-0.5">
+                  ปรับพารามิเตอร์ของเสาเข็มและลูกตุ้มด้านล่าง จากนั้นกดปุ่ม <strong>"บันทึกเป็นสเปกใหม่"</strong> เพื่อบันทึกเป็นสเปกมาตรฐานของโครงการ
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => handleOpenSaveModal('NEW')}
+                className="bg-amber-600 hover:bg-amber-700 text-white font-bold px-3 py-1.5 rounded-lg text-xs flex-shrink-0 self-start sm:self-auto transition shadow-xs"
+              >
+                + บันทึกรายการแรก
+              </button>
+            </div>
+          ) : (
+            <div className="flex items-center gap-2.5 overflow-x-auto pb-1.5 scrollbar-thin">
+              {criteriaList.map((crit) => {
+                const isSelected = selectedCriteriaId === crit.id;
+                const pileCount = crit._count?.piles ?? 0;
+
+                return (
+                  <div
+                    key={crit.id}
+                    onClick={() => handleLoadCriteria(crit)}
+                    className={`flex-shrink-0 p-3 rounded-xl border cursor-pointer transition select-none min-w-[220px] ${
+                      isSelected
+                        ? 'bg-amber-50/90 border-amber-400 ring-2 ring-amber-400/80 shadow-xs'
+                        : 'bg-slate-50/80 hover:bg-slate-100 border-slate-200 text-slate-700 hover:border-slate-300'
+                    }`}
+                  >
+                    <div className="flex items-start justify-between gap-1.5">
+                      <div className="font-black text-xs text-slate-900 truncate max-w-[160px]" title={crit.name || crit.pileType}>
+                        {crit.name || crit.pileType}
+                      </div>
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          handleDeleteCriteria(crit.id, crit.name || crit.pileType);
+                        }}
+                        title="ลบรายการคำนวณนี้"
+                        className="text-slate-400 hover:text-rose-600 p-0.5 rounded transition hover:bg-rose-50"
+                      >
+                        <Trash2 className="w-3.5 h-3.5" />
+                      </button>
+                    </div>
+
+                    <div className="mt-1.5 flex items-baseline justify-between text-[11px] font-mono">
+                      <span className="text-amber-800 font-black">Ra = {crit.safeWorkingLoadT} T</span>
+                      <span className="text-emerald-700 font-bold">S₁₀ &le; {crit.targetSet10BlowsCm} cm</span>
+                    </div>
+
+                    <div className="mt-2 pt-1.5 border-t border-slate-200/70 flex items-center justify-between text-[10px]">
+                      <span className="text-slate-500 font-medium">
+                        ตุ้ม {crit.hammerWeightT}T | ดรอป {crit.dropHeightCm}cm
+                      </span>
+                      <span
+                        className={`px-1.5 py-0.5 rounded font-bold ${
+                          pileCount > 0
+                            ? 'bg-amber-200 text-amber-900'
+                            : 'bg-slate-200/70 text-slate-600'
+                        }`}
+                      >
+                        {pileCount} ต้น
+                      </span>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </div>
+      </div>
+
       {/* Header card with preset selector */}
       <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-5">
         <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
@@ -751,6 +1152,48 @@ export default function HileyCalculator() {
                 </div>
               </div>
             )}
+
+            {/* Project Criteria Sync & Save Action Card */}
+            <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-5 space-y-3">
+              <div className="flex items-center justify-between">
+                <span className="text-xs font-bold text-slate-800 flex items-center gap-1.5">
+                  <Bookmark className="w-4 h-4 text-amber-600" />
+                  <span>บันทึกและซิงก์สเปกเสาเข็มโครงการ</span>
+                </span>
+                {selectedCriteriaId ? (
+                  <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-amber-100 text-amber-900 border border-amber-300">
+                    กำลังแก้ไขสเปกเดิม
+                  </span>
+                ) : (
+                  <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-slate-100 text-slate-600 border border-slate-200">
+                    กำหนดค่าเอง (Custom)
+                  </span>
+                )}
+              </div>
+
+              <p className="text-xs text-slate-500 leading-relaxed">
+                บันทึกค่า Target Set (<strong className="text-slate-900">{hileyResult.targetSet10BlowsCm > 0 ? `${hileyResult.targetSet10BlowsCm.toFixed(2)} cm` : '-'}</strong>) และตัวแปรคำนวณทั้งหมดเข้าโครงการ เพื่ออ้างอิงอัตโนมัติในการตอกเสาเข็มหน้างาน
+              </p>
+
+              <div className="grid grid-cols-2 gap-2 pt-1">
+                <button
+                  type="button"
+                  onClick={() => handleOpenSaveModal('NEW')}
+                  className="w-full bg-slate-100 hover:bg-slate-200 text-slate-800 font-bold py-2.5 px-3 rounded-lg text-xs flex items-center justify-center gap-1.5 transition active:scale-95"
+                >
+                  <FolderPlus className="w-4 h-4 text-amber-600" />
+                  <span>บันทึกเป็นสเปกใหม่</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => handleOpenSaveModal(selectedCriteriaId ? 'UPDATE' : 'NEW')}
+                  className="w-full bg-amber-500 hover:bg-amber-600 text-slate-950 font-bold py-2.5 px-3 rounded-lg text-xs flex items-center justify-center gap-1.5 shadow-xs transition active:scale-95"
+                >
+                  <Save className="w-4 h-4" />
+                  <span>{selectedCriteriaId ? 'บันทึกทับสเปกนี้' : 'บันทึกเข้าโครงการ'}</span>
+                </button>
+              </div>
+            </div>
           </div>
         </div>
       </div>
@@ -761,6 +1204,240 @@ export default function HileyCalculator() {
         nominalHeightCm={input.dropHeightCm}
         nominalCompressionCm={input.tempCompressionCm}
       />
+
+      {/* Save / Update Calculation Sheet Modal Dialog */}
+      {isSaveModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 backdrop-blur-xs p-4 overflow-y-auto animate-in fade-in">
+          <div className="bg-white rounded-2xl shadow-2xl border border-slate-200 max-w-lg w-full overflow-hidden animate-in zoom-in-95">
+            {/* Modal Header */}
+            <div className="bg-slate-900 text-white p-4 flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <div className="w-8 h-8 rounded-lg bg-amber-500 text-slate-950 flex items-center justify-center font-bold">
+                  <Save className="w-4 h-4" />
+                </div>
+                <div>
+                  <h3 className="font-bold text-sm">
+                    {saveMode === 'NEW' ? 'บันทึกเป็นรายการคำนวณใหม่' : 'บันทึกปรับปรุงรายการคำนวณเดิม'}
+                  </h3>
+                  <p className="text-[11px] text-slate-400">
+                    โครงการ: {project?.name || 'โครงการปัจจุบัน'}
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setIsSaveModalOpen(false)}
+                className="text-slate-400 hover:text-white p-1 rounded-lg transition"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            {/* Modal Body */}
+            <div className="p-5 space-y-4 max-h-[80vh] overflow-y-auto">
+              {/* Mode Toggle Tabs */}
+              {criteriaList.length > 0 && (
+                <div className="grid grid-cols-2 gap-1 bg-slate-100 p-1 rounded-xl border border-slate-200 text-xs font-bold">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setSaveMode('NEW');
+                      const sec = getPileSectionById(selectedSectionId);
+                      setSaveName(`${sec?.label || savePileType} (${input.safeWorkingLoadTons}T)`);
+                    }}
+                    className={`py-2 px-3 rounded-lg transition flex items-center justify-center gap-1.5 ${
+                      saveMode === 'NEW'
+                        ? 'bg-white text-slate-900 shadow-xs'
+                        : 'text-slate-500 hover:text-slate-800'
+                    }`}
+                  >
+                    <FolderPlus className="w-3.5 h-3.5 text-amber-600" />
+                    <span>สร้างสเปกใหม่ (New)</span>
+                  </button>
+                  <button
+                    type="button"
+                    disabled={!selectedCriteriaId}
+                    onClick={() => setSaveMode('UPDATE')}
+                    className={`py-2 px-3 rounded-lg transition flex items-center justify-center gap-1.5 ${
+                      saveMode === 'UPDATE'
+                        ? 'bg-white text-slate-900 shadow-xs'
+                        : 'text-slate-500 hover:text-slate-800 disabled:opacity-40'
+                    }`}
+                  >
+                    <Save className="w-3.5 h-3.5 text-emerald-600" />
+                    <span>บันทึกทับเดิม (Update)</span>
+                  </button>
+                </div>
+              )}
+
+              {/* Name input */}
+              <div>
+                <label className="block text-xs font-bold text-slate-800 mb-1">
+                  ชื่อรายการคำนวณ / สเปกเสาเข็ม <span className="text-rose-500">*</span>
+                </label>
+                <input
+                  type="text"
+                  value={saveName}
+                  onChange={(e) => setSaveName(e.target.value)}
+                  placeholder="เช่น I-0.26m อาคาร A (35 ตัน)"
+                  className="w-full text-xs font-bold text-slate-900 bg-slate-50 border border-slate-300 rounded-lg p-2.5 focus:bg-white focus:ring-2 focus:ring-amber-500 focus:outline-none"
+                />
+                <p className="text-[11px] text-slate-400 mt-1">
+                  * ตั้งชื่อที่สื่อถึงขนาดเสาเข็มและโซนงาน เช่น สเปกอาคาร A, เสาเข็มรั้ว, เสาเข็มหอคอย
+                </p>
+              </div>
+
+              {/* Pile Type specification label */}
+              <div>
+                <label className="block text-xs font-bold text-slate-800 mb-1">
+                  ชนิด/ประเภทเสาเข็ม (Pile Type Label)
+                </label>
+                <input
+                  type="text"
+                  value={savePileType}
+                  onChange={(e) => setSavePileType(e.target.value)}
+                  placeholder="เช่น Prestressed Concrete I-0.26m"
+                  className="w-full text-xs text-slate-700 bg-slate-50 border border-slate-300 rounded-lg p-2.5 focus:bg-white focus:ring-2 focus:ring-amber-500 focus:outline-none"
+                />
+              </div>
+
+              {/* Engineering Parameters Summary Card */}
+              <div className="bg-slate-50 rounded-xl p-3.5 border border-slate-200 text-xs space-y-2">
+                <div className="font-bold text-slate-700 flex items-center justify-between pb-1.5 border-b border-slate-200/80">
+                  <span>สรุปผลการคำนวณที่จะบันทึก:</span>
+                  <span className="font-mono text-amber-700 font-black">Hiley Formula</span>
+                </div>
+
+                <div className="grid grid-cols-2 gap-2 text-[11px] font-mono">
+                  <div>
+                    <span className="text-slate-400 block text-[10px]">Safe Load (Ra)</span>
+                    <strong className="text-slate-800">{input.safeWorkingLoadTons} ตัน (FS = {input.safetyFactor})</strong>
+                  </div>
+                  <div>
+                    <span className="text-slate-400 block text-[10px]">Target Set S10</span>
+                    <strong className="text-amber-800 text-xs font-black">{hileyResult.targetSet10BlowsCm.toFixed(2)} cm</strong>
+                  </div>
+                  <div>
+                    <span className="text-slate-400 block text-[10px]">สเปกลูกตุ้ม (Hammer)</span>
+                    <span className="text-slate-700">{input.hammerWeightTons} T (Drop {input.dropHeightCm} cm)</span>
+                  </div>
+                  <div>
+                    <span className="text-slate-400 block text-[10px]">หน้าตัด & ความยาว</span>
+                    <span className="text-slate-700">{input.pileSectionAreaCm2 || '-'} cm² (ยาว {input.pileLengthM || '-'} m)</span>
+                  </div>
+                </div>
+
+                <div className="pt-1 text-[11px] font-mono text-emerald-800 font-bold flex items-center justify-between">
+                  <span>อัตราตอกขั้นต่ำเทียบเคียง:</span>
+                  <span>&ge; {hileyResult.equivalentBlowsPerFoot} blows/ft ({hileyResult.equivalentBlowsPerMeter} blw/m)</span>
+                </div>
+              </div>
+
+              {/* Link Piles Option */}
+              <div className="bg-amber-50/70 p-3.5 rounded-xl border border-amber-200 text-xs space-y-2">
+                <div className="font-bold text-amber-950 flex items-center gap-1.5">
+                  <CheckCircle2 className="w-4 h-4 text-amber-600" />
+                  <span>การผูกเกณฑ์นี้กับเสาเข็มในโครงการ:</span>
+                </div>
+
+                <div className="space-y-1.5 pt-1">
+                  <label className="flex items-center gap-2 cursor-pointer">
+                    <input
+                      type="radio"
+                      name="applyOption"
+                      checked={applyToMatchingPiles && !applyToAllPiles}
+                      onChange={() => {
+                        setApplyToMatchingPiles(true);
+                        setApplyToAllPiles(false);
+                      }}
+                      className="text-amber-600 focus:ring-amber-500"
+                    />
+                    <span className="text-slate-700 font-medium">
+                      ผูกเฉพาะเสาเข็มที่ใช้ประเภทนี้ หรือเสาเข็มที่ยังไม่มีเกณฑ์
+                    </span>
+                  </label>
+
+                  <label className="flex items-center gap-2 cursor-pointer">
+                    <input
+                      type="radio"
+                      name="applyOption"
+                      checked={applyToAllPiles}
+                      onChange={() => {
+                        setApplyToAllPiles(true);
+                        setApplyToMatchingPiles(false);
+                      }}
+                      className="text-amber-600 focus:ring-amber-500"
+                    />
+                    <span className="text-slate-700 font-medium">
+                      ผูกกับเสาเข็มทุกต้นในโครงการนี้ทันที
+                    </span>
+                  </label>
+
+                  <label className="flex items-center gap-2 cursor-pointer">
+                    <input
+                      type="radio"
+                      name="applyOption"
+                      checked={!applyToMatchingPiles && !applyToAllPiles}
+                      onChange={() => {
+                        setApplyToMatchingPiles(false);
+                        setApplyToAllPiles(false);
+                      }}
+                      className="text-amber-600 focus:ring-amber-500"
+                    />
+                    <span className="text-slate-700 font-medium">
+                      บันทึกเก็บไว้เป็นพรีเซ็ตอ้างอิงเท่านั้น (ยังไม่ผูกกับเสาเข็ม)
+                    </span>
+                  </label>
+                </div>
+              </div>
+
+              {/* Notes */}
+              <div>
+                <label className="block text-xs font-bold text-slate-800 mb-1">
+                  หมายเหตุ / ข้อกำหนดพิเศษ (Notes)
+                </label>
+                <textarea
+                  rows={2}
+                  value={saveNotes}
+                  onChange={(e) => setSaveNotes(e.target.value)}
+                  placeholder="เช่น กำหนดใช้ปั้นจั่นเบอร์ 2 โซนอาคาร B"
+                  className="w-full text-xs text-slate-800 bg-slate-50 border border-slate-300 rounded-lg p-2.5 focus:bg-white focus:ring-2 focus:ring-amber-500 focus:outline-none"
+                />
+              </div>
+            </div>
+
+            {/* Modal Footer */}
+            <div className="p-4 bg-slate-50 border-t border-slate-200 flex items-center justify-end gap-2">
+              <button
+                type="button"
+                onClick={() => setIsSaveModalOpen(false)}
+                className="px-4 py-2 rounded-lg text-xs font-bold text-slate-600 hover:bg-slate-200 transition"
+              >
+                ยกเลิก (Esc)
+              </button>
+
+              <button
+                type="button"
+                disabled={isSaving}
+                onClick={handleConfirmSave}
+                className="px-4 py-2 rounded-lg text-xs font-bold bg-amber-500 hover:bg-amber-600 text-slate-950 flex items-center gap-1.5 shadow-sm transition active:scale-95 disabled:opacity-50"
+              >
+                {isSaving ? (
+                  <>
+                    <Loader2 className="w-4 h-4 animate-spin" />
+                    <span>กำลังบันทึก...</span>
+                  </>
+                ) : (
+                  <>
+                    <Save className="w-4 h-4" />
+                    <span>{saveMode === 'NEW' ? 'ยืนยันบันทึกเป็นสเปกใหม่' : 'ยืนยันบันทึกทับสเปกนี้'}</span>
+                  </>
+                )}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

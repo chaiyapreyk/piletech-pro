@@ -34,20 +34,29 @@ model ProjectSettings {
 }
 
 model DrivingCriteria {
-  id                 String   @id @default(cuid())
-  projectId          String
-  project            Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
-  pileType           String   // e.g. "I-0.26x0.26m", "Square 0.35m", "Spun Dia 0.40m"
-  safeWorkingLoadT   Float    // Ra in tons
-  safetyFactor       Float    @default(2.5)
-  hammerWeightT      Float    // W in tons
-  dropHeightCm       Float    // H in cm
-  cushionCoeffE      Float    @default(0.25)
-  tempCompressionC   Float    // C in cm
-  targetSet10BlowsCm Float   // Target S10 in cm
-  piles              Pile[]
-  createdAt          DateTime @default(now())
-  updatedAt          DateTime @updatedAt
+  id                  String   @id @default(cuid())
+  projectId           String
+  project             Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  name                String?  // Calculation sheet name, e.g. "I-0.26m อาคาร A (35 ตัน)"
+  pileType            String   // e.g. "Prestressed Concrete I-0.26m"
+  sectionId           String?  // Standard section ID e.g. "I_026", "SQ_035"
+  safeWorkingLoadT    Float    // Ra in tons
+  safetyFactor        Float    @default(2.5)
+  hammerWeightT       Float    // W in tons
+  dropHeightCm        Float    // H in cm
+  pileWeightT         Float?   // P in tons
+  cushionCoeffE       Float    @default(0.25)
+  tempCompressionC    Float    // C in cm
+  concreteStrengthKsc Float?   // fc' in ksc (e.g. 350)
+  elasticModulusKsc   Float?   // Ec in ksc (e.g. 280,000)
+  pileSectionAreaCm2  Float?   // Area A in cm2 (e.g. 484)
+  pileLengthM         Float?   // L in meters (e.g. 20.0)
+  hammerEfficiency    Float?   // Hammer efficiency eta
+  targetSet10BlowsCm  Float    // Target S10 in cm
+  notes               String?
+  piles               Pile[]
+  createdAt           DateTime @default(now())
+  updatedAt           DateTime @updatedAt
 }
 
 model Pile {

@@ -105,7 +105,27 @@ export default async function PilesListPage() {
                       {pile.gridLine}
                     </td>
                     <td className="p-3.5 text-slate-600 text-[11px]">
-                      {pile.criteria?.pileType || 'I-Section 0.26m'}
+                      <div className="flex flex-col gap-0.5">
+                        <span className="font-semibold text-slate-800">
+                          {pile.criteria?.name || pile.criteria?.pileType || 'I-Section 0.26m'}
+                        </span>
+                        {pile.criteria ? (
+                          <div className="flex items-center gap-1.5 flex-wrap mt-0.5">
+                            <span className="text-[10px] text-amber-800 font-mono bg-amber-50 border border-amber-200/60 px-1.5 py-0.5 rounded font-medium">
+                              Ra: {pile.criteria.safeWorkingLoadT}t | S₁₀ &le; {pile.criteria.targetSet10BlowsCm} cm
+                            </span>
+                            <Link
+                              href={`/calculator?criteriaId=${pile.criteria.id}`}
+                              className="text-[10px] text-blue-600 hover:text-blue-800 hover:underline inline-flex items-center font-semibold"
+                              title="เปิดรายการคำนวณ Hiley ของสเปกนี้"
+                            >
+                              [สูตร Hiley]
+                            </Link>
+                          </div>
+                        ) : (
+                          <span className="text-[10px] text-slate-400">ยังไม่กำหนดสเปก</span>
+                        )}
+                      </div>
                     </td>
                     <td className="p-3.5 text-center font-mono">
                       {drivenM ? (
