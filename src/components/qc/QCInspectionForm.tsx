@@ -21,6 +21,7 @@ import {
   ArrowLeft,
   Check,
 } from 'lucide-react';
+import { useToast } from '@/components/ui/ToastProvider';
 
 interface PileData {
   id: string;
@@ -45,6 +46,7 @@ interface PileData {
 
 export default function QCInspectionForm({ pile }: { pile: PileData }) {
   const router = useRouter();
+  const toast = useToast();
 
   // Coordinates
   const [desX, setDesX] = useState<string>(
@@ -146,10 +148,15 @@ export default function QCInspectionForm({ pile }: { pile: PileData }) {
 
       if (res.ok) {
         setSavedSuccess(true);
-        setTimeout(() => router.push('/qc'), 1200);
+        toast.success(`บันทึกผลตรวจสอบ QC เสาเข็ม ${pile.pileNo} สำเร็จ`);
+        setTimeout(() => router.push('/qc'), 1000);
+      } else {
+        const data = await res.json().catch(() => ({}));
+        throw new Error(data.error || 'บันทึกข้อมูล QC ไม่สำเร็จ');
       }
-    } catch (err) {
+    } catch (err: any) {
       console.error('Error saving QC inspection:', err);
+      toast.error(err.message || 'เกิดข้อผิดพลาดในการบันทึกผล QC');
     } finally {
       setIsSaving(false);
     }

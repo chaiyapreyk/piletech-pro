@@ -142,37 +142,40 @@ export async function DELETE(request: Request) {
       return NextResponse.json({ error: 'ไม่พบโครงการ' }, { status: 404 });
     }
 
-    let deletedCount = 0;
+    const { deletedCount, totalNow } = await prisma.$transaction(async (tx) => {
+      let count = 0;
+      if (mode === 'SELECTED' && Array.isArray(ids) && ids.length > 0) {
+        const res = await tx.pile.deleteMany({
+          where: {
+            id: { in: ids },
+            projectId: project.id,
+          },
+        });
+        count = res.count;
+      } else if (mode === 'ALL_PENDING') {
+        const res = await tx.pile.deleteMany({
+          where: {
+            projectId: project.id,
+            drivingRecord: null,
+          },
+        });
+        count = res.count;
+      } else if (mode === 'ALL') {
+        const res = await tx.pile.deleteMany({
+          where: {
+            projectId: project.id,
+          },
+        });
+        count = res.count;
+      } else {
+        throw new Error('โหมดการลบไม่ถูกต้อง');
+      }
 
-    if (mode === 'SELECTED' && Array.isArray(ids) && ids.length > 0) {
-      const res = await prisma.pile.deleteMany({
-        where: {
-          id: { in: ids },
-          projectId: project.id,
-        },
+      const total = await tx.pile.count({
+        where: { projectId: project.id },
       });
-      deletedCount = res.count;
-    } else if (mode === 'ALL_PENDING') {
-      const res = await prisma.pile.deleteMany({
-        where: {
-          projectId: project.id,
-          drivingRecord: null,
-        },
-      });
-      deletedCount = res.count;
-    } else if (mode === 'ALL') {
-      const res = await prisma.pile.deleteMany({
-        where: {
-          projectId: project.id,
-        },
-      });
-      deletedCount = res.count;
-    } else {
-      return NextResponse.json({ error: 'โหมดการลบไม่ถูกต้อง' }, { status: 400 });
-    }
 
-    const totalNow = await prisma.pile.count({
-      where: { projectId: project.id },
+      return { deletedCount: count, totalNow: total };
     });
 
     return NextResponse.json({
@@ -218,25 +221,25 @@ export async function PATCH(request: Request) {
       updateData.status = status;
     }
 
-    const res = await prisma.pile.updateMany({
-      where: { id: { in: ids } },
-      data: updateData,
-    });
+    const result = await prisma.$transaction(async (tx) => {
+      const res = await tx.pile.updateMany({
+        where: { id: { in: ids } },
+        data: updateData,
+      });
 
-    // If criteriaId changed, re-evaluate isSetPassed for piles that have driving records
-    if (criteriaId !== undefined) {
-      if (criteriaId) {
-        const criteria = await prisma.drivingCriteria.findUnique({
+      // If criteriaId changed, re-evaluate isSetPassed for piles that have driving records
+      if (criteriaId !== undefined && criteriaId) {
+        const criteria = await tx.drivingCriteria.findUnique({
           where: { id: criteriaId },
         });
         if (criteria) {
-          const records = await prisma.drivingRecord.findMany({
+          const records = await tx.drivingRecord.findMany({
             where: { pileId: { in: ids } },
           });
           for (const rec of records) {
             const isPassed = rec.measuredLast10Cm <= criteria.targetSet10BlowsCm;
             if (isPassed !== rec.isSetPassed) {
-              await prisma.drivingRecord.update({
+              await tx.drivingRecord.update({
                 where: { id: rec.id },
                 data: { isSetPassed: isPassed },
               });
@@ -244,12 +247,14 @@ export async function PATCH(request: Request) {
           }
         }
       }
-    }
+
+      return res.count;
+    });
 
     return NextResponse.json({
       success: true,
-      updatedCount: res.count,
-      message: `อัปเดตขนาดเข็มและข้อมูลสำเร็จ ${res.count} ต้น`,
+      updatedCount: result,
+      message: `อัปเดตขนาดเข็มและข้อมูลสำเร็จ ${result} ต้น`,
     });
   } catch (error) {
     console.error('Failed to batch update piles:', error);

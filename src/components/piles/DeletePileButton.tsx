@@ -1,8 +1,10 @@
-﻿'use client';
+'use client';
 
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { Trash2, Loader2 } from 'lucide-react';
+import ConfirmModal from '@/components/ui/ConfirmModal';
+import { useToast } from '@/components/ui/ToastProvider';
 
 interface DeletePileButtonProps {
   pileId: string;
@@ -18,15 +20,11 @@ export default function DeletePileButton({
   className = '',
 }: DeletePileButtonProps) {
   const router = useRouter();
+  const toast = useToast();
   const [isDeleting, setIsDeleting] = useState(false);
+  const [showConfirm, setShowConfirm] = useState(false);
 
   const handleDelete = async () => {
-    const confirmed = window.confirm(
-      `⚠️ ยืนยันการลบเสาเข็ม "${pileNo}" หรือไม่?\n\nข้อมูลบันทึกการตอก (Driving Record) และผลตรวจสอบ QC ทั้งหมดของเสาเข็มต้นนี้จะถูกลบไปด้วยอย่างถาวร`
-    );
-
-    if (!confirmed) return;
-
     try {
       setIsDeleting(true);
       const res = await fetch(`/api/piles/${pileId}`, {
@@ -38,32 +36,48 @@ export default function DeletePileButton({
         throw new Error(data.error || 'Failed to delete pile');
       }
 
+      toast.success(`ลบเสาเข็ม ${pileNo} สำเร็จ`);
+      setShowConfirm(false);
+
       if (onDeleted) {
         onDeleted();
       } else {
         router.refresh();
       }
     } catch (err: any) {
-      alert(`เกิดข้อผิดพลาดในการลบ: ${err.message}`);
+      toast.error(`เกิดข้อผิดพลาดในการลบ: ${err.message}`);
     } finally {
       setIsDeleting(false);
     }
   };
 
   return (
-    <button
-      type="button"
-      onClick={handleDelete}
-      disabled={isDeleting}
-      title={`ลบเสาเข็ม ${pileNo}`}
-      className={`inline-flex items-center gap-1 bg-rose-50 hover:bg-rose-100 text-rose-600 hover:text-rose-700 border border-rose-200 px-2 py-1.5 rounded-md text-[11px] font-bold transition disabled:opacity-50 disabled:cursor-not-allowed ${className}`}
-    >
-      {isDeleting ? (
-        <Loader2 className="w-3 h-3 animate-spin" />
-      ) : (
-        <Trash2 className="w-3 h-3" />
-      )}
-      <span>{isDeleting ? 'กำลังลบ...' : 'ลบ'}</span>
-    </button>
+    <>
+      <button
+        type="button"
+        onClick={() => setShowConfirm(true)}
+        disabled={isDeleting}
+        title={`ลบเสาเข็ม ${pileNo}`}
+        className={`inline-flex items-center gap-1 bg-rose-50 hover:bg-rose-100 text-rose-600 hover:text-rose-700 border border-rose-200 px-2 py-1.5 rounded-md text-[11px] font-bold transition disabled:opacity-50 disabled:cursor-not-allowed ${className}`}
+      >
+        {isDeleting ? (
+          <Loader2 className="w-3 h-3 animate-spin" />
+        ) : (
+          <Trash2 className="w-3 h-3" />
+        )}
+        <span>{isDeleting ? 'กำลังลบ...' : 'ลบ'}</span>
+      </button>
+
+      <ConfirmModal
+        isOpen={showConfirm}
+        onClose={() => setShowConfirm(false)}
+        onConfirm={handleDelete}
+        title="ยืนยันการลบเสาเข็ม"
+        message={`คุณต้องการลบเสาเข็ม "${pileNo}" หรือไม่?\nข้อมูลการตอก (Driving Record) และผลตรวจสอบ QC ทั้งหมดจะถูกลบไปด้วยถาวร`}
+        confirmText="ยืนยันการลบ"
+        isDestructive={true}
+        isLoading={isDeleting}
+      />
+    </>
   );
 }

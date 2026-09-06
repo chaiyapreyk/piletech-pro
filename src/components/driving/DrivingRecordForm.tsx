@@ -20,6 +20,7 @@ import {
   AlertTriangle,
 } from 'lucide-react';
 import Link from 'next/link';
+import { useToast } from '@/components/ui/ToastProvider';
 
 interface PileData {
   id: string;
@@ -56,6 +57,7 @@ interface PileData {
 
 export default function DrivingRecordForm({ pile }: { pile: PileData }) {
   const router = useRouter();
+  const toast = useToast();
   const initialBlows: (number | null)[] = pile.drivingRecord?.penetrationBlows
     ? JSON.parse(pile.drivingRecord.penetrationBlows)
     : [];
@@ -130,6 +132,84 @@ export default function DrivingRecordForm({ pile }: { pile: PileData }) {
   const [isSaving, setIsSaving] = useState<boolean>(false);
   const [savedSuccess, setSavedSuccess] = useState<boolean>(false);
 
+  // Local Draft Autosave State & Lifecycle
+  const draftKey = `piledrive_draft_${pile.id}`;
+  const [hasDraft, setHasDraft] = useState(false);
+  const [draftSavedTime, setDraftSavedTime] = useState<string | null>(null);
+
+  // Check for existing draft on mount
+  React.useEffect(() => {
+    try {
+      const saved = localStorage.getItem(draftKey);
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (parsed && Array.isArray(parsed.blowCounts) && parsed.blowCounts.length > 0) {
+          setHasDraft(true);
+          setDraftSavedTime(parsed.savedAt || 'ก่อนหน้านี้');
+        }
+      }
+    } catch {}
+  }, [draftKey]);
+
+  // Restore draft handler
+  const handleRestoreDraft = () => {
+    try {
+      const saved = localStorage.getItem(draftKey);
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (parsed.blowCounts) setBlowCounts(parsed.blowCounts);
+        if (parsed.recordUnit) setRecordUnit(parsed.recordUnit);
+        if (parsed.recordScope) setRecordScope(parsed.recordScope);
+        if (parsed.windowLength) setWindowLength(parsed.windowLength);
+        if (parsed.measuredLast10 !== undefined) setMeasuredLast10(parsed.measuredLast10);
+        if (parsed.measuredTempC !== undefined) setMeasuredTempC(parsed.measuredTempC);
+        if (parsed.totalPileLength !== undefined) setTotalPileLength(parsed.totalPileLength);
+        if (parsed.groundLevel !== undefined) setGroundLevel(parsed.groundLevel);
+        if (parsed.cutOffLevel !== undefined) setCutOffLevel(parsed.cutOffLevel);
+        if (parsed.inspectorName) setInspectorName(parsed.inspectorName);
+        if (parsed.notes) setNotes(parsed.notes);
+        setHasDraft(false);
+        toast.success('กู้คืนข้อมูลร่างจากการบันทึกอัตโนมัติสำเร็จ');
+      }
+    } catch {
+      toast.error('ไม่สามารถกู้คืนข้อมูลร่างได้');
+    }
+  };
+
+  const handleDiscardDraft = () => {
+    try {
+      localStorage.removeItem(draftKey);
+      setHasDraft(false);
+      toast.info('ล้างข้อมูลร่างเรียบร้อยแล้ว');
+    } catch {}
+  };
+
+  // Autosave to localStorage on changes
+  React.useEffect(() => {
+    if (blowCounts.length > 0 || notes) {
+      const timeout = setTimeout(() => {
+        try {
+          const draftData = {
+            blowCounts,
+            recordUnit,
+            recordScope,
+            windowLength,
+            measuredLast10,
+            measuredTempC,
+            totalPileLength,
+            groundLevel,
+            cutOffLevel,
+            inspectorName,
+            notes,
+            savedAt: new Date().toLocaleTimeString('th-TH', { hour: '2-digit', minute: '2-digit' }),
+          };
+          localStorage.setItem(draftKey, JSON.stringify(draftData));
+        } catch {}
+      }, 600);
+      return () => clearTimeout(timeout);
+    }
+  }, [blowCounts, recordUnit, recordScope, windowLength, measuredLast10, measuredTempC, totalPileLength, groundLevel, cutOffLevel, inspectorName, notes, draftKey]);
+
   // Derived Engineering Calculations
   const totalLengthNum = Number(totalPileLength) || 0;
   const stickUpNum = activeStickUp;
@@ -184,10 +264,18 @@ export default function DrivingRecordForm({ pile }: { pile: PileData }) {
 
       if (res.ok) {
         setSavedSuccess(true);
-        setTimeout(() => router.push('/piles'), 1200);
+        try {
+          localStorage.removeItem(draftKey);
+        } catch {}
+        toast.success(`บันทึกผลการตอกเสาเข็ม ${pile.pileNo} สำเร็จ`);
+        setTimeout(() => router.push('/piles'), 1000);
+      } else {
+        const data = await res.json().catch(() => ({}));
+        throw new Error(data.error || 'บันทึกข้อมูลการตอกไม่สำเร็จ');
       }
-    } catch (err) {
+    } catch (err: any) {
       console.error('Error saving record:', err);
+      toast.error(err.message || 'เกิดข้อผิดพลาดในการบันทึกผลการตอก');
     } finally {
       setIsSaving(false);
     }
@@ -208,6 +296,39 @@ export default function DrivingRecordForm({ pile }: { pile: PileData }) {
           ID: {pile.pileNo} ({pile.gridLine})
         </span>
       </div>
+
+      {/* Draft Restore Notification Banner */}
+      {hasDraft && (
+        <div className="bg-amber-50 border-2 border-amber-300 text-amber-950 p-4 rounded-xl shadow-sm flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 animate-in fade-in">
+          <div className="flex items-center gap-2.5">
+            <span className="p-2 rounded-lg bg-amber-200 text-amber-900 shrink-0">
+              <Sparkles className="w-5 h-5" />
+            </span>
+            <div>
+              <h4 className="font-bold text-xs">พบข้อมูลร่างที่บันทึกไว้ในเครื่อง ({draftSavedTime})</h4>
+              <p className="text-[11px] text-amber-800 opacity-90">
+                คุณสามารถกู้คืนข้อมูลค่าตอกเข็มที่กรอกค้างไว้ในเครื่องนี้ได้ทันที
+              </p>
+            </div>
+          </div>
+          <div className="flex items-center gap-2 self-end sm:self-auto shrink-0">
+            <button
+              type="button"
+              onClick={handleDiscardDraft}
+              className="px-3 py-1.5 rounded-lg text-xs font-semibold text-slate-600 hover:bg-amber-100 transition"
+            >
+              ละทิ้งร่าง
+            </button>
+            <button
+              type="button"
+              onClick={handleRestoreDraft}
+              className="px-3.5 py-1.5 rounded-lg text-xs font-bold bg-amber-500 hover:bg-amber-600 text-slate-950 transition shadow-xs"
+            >
+              กู้คืนข้อมูลร่าง
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* Pile Header Card */}
       <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-5">

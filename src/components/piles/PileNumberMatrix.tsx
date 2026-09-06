@@ -21,6 +21,7 @@ import {
   Table as TableIcon,
   Grid3X3,
   LayoutGrid,
+  ClipboardList,
   CheckSquare,
   Square,
   Building,
@@ -29,47 +30,21 @@ import {
   Loader2,
 } from 'lucide-react';
 import DeletePileButton from './DeletePileButton';
+import { useToast } from '@/components/ui/ToastProvider';
+import ConfirmModal from '@/components/ui/ConfirmModal';
+import { calculateAverageBlows } from '@/lib/calculations/drivingLog';
+import {
+  type PileData,
+  type ProjectCriteriaOption,
+  getPileStatusStyle,
+} from './matrix/matrixTypes';
+export { type PileData, type ProjectCriteriaOption, getPileStatusStyle };
 
-export interface PileData {
-  id: string;
-  pileNo: string;
-  gridLine: string;
-  building?: string | null;
-  status: string;
-  criteriaId?: string | null;
-  criteria?: {
-    id?: string;
-    name?: string | null;
-    pileType: string;
-    safeWorkingLoadT: number;
-    targetSet10BlowsCm: number;
-  } | null;
-  drivingRecord?: {
-    id: string;
-    penetrationBlows?: string | null;
-    recordUnit?: string;
-    recordScope?: string;
-    windowLengthFt?: number | null;
-    measuredLast10Cm: number;
-    drivenLengthM: number;
-    isSetPassed: boolean;
-  } | null;
-  qcInspection?: {
-    id: string;
-    netDeviationCm: number | null;
-    deviationStatus: string;
-  } | null;
-}
-
-export interface ProjectCriteriaOption {
-  id: string;
-  name?: string | null;
-  pileType: string;
-  safeWorkingLoadT: number;
-  targetSet10BlowsCm: number;
-  dropHeightCm?: number;
-  hammerWeightT?: number;
-}
+import MatrixSummaryCards from './matrix/MatrixSummaryCards';
+import MatrixTableView from './matrix/MatrixTableView';
+import MatrixDenseHeatmap from './matrix/MatrixDenseHeatmap';
+import MatrixCardsView from './matrix/MatrixCardsView';
+import MatrixDetailedTable from './matrix/MatrixDetailedTable';
 
 interface PileNumberMatrixProps {
   initialPiles: PileData[];
@@ -83,14 +58,31 @@ export default function PileNumberMatrix({
   projectCriteria = [],
 }: PileNumberMatrixProps) {
   const router = useRouter();
+  const toast = useToast();
   const [piles, setPiles] = useState<PileData[]>(initialPiles);
   const [criteriaList, setCriteriaList] = useState<ProjectCriteriaOption[]>(projectCriteria);
   const [filterStatus, setFilterStatus] = useState<'ALL' | 'NOT_DRIVEN' | 'PASSED' | 'FAILED'>('ALL');
   const [filterBuilding, setFilterBuilding] = useState<string>('ALL');
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedPile, setSelectedPile] = useState<PileData | null>(null);
-  const [viewMode, setViewMode] = useState<'TABLE_10' | 'DENSE_HEATMAP' | 'CARDS'>('TABLE_10');
+  const [viewMode, setViewMode] = useState<'TABLE_10' | 'DENSE_HEATMAP' | 'CARDS' | 'DETAILED_TABLE'>('TABLE_10');
   const [selectedRange, setSelectedRange] = useState<string>('ALL');
+
+  // Confirmation Dialog State
+  const [confirmDialog, setConfirmDialog] = useState<{
+    isOpen: boolean;
+    title: string;
+    message: string;
+    onConfirm: () => void;
+    isDestructive?: boolean;
+    confirmText?: string;
+    isLoading?: boolean;
+  }>({
+    isOpen: false,
+    title: '',
+    message: '',
+    onConfirm: () => {},
+  });
 
   // Bulk Selection & Deletion Mode
   const [isBulkMode, setIsBulkMode] = useState(false);
@@ -245,33 +237,6 @@ export default function PileNumberMatrix({
     return rows;
   }, [filteredPiles]);
 
-  // Style helper for pile cells
-  const getPileStatusStyle = (pile: PileData) => {
-    const isDriven = !!pile.drivingRecord;
-    const isPassed = pile.drivingRecord?.isSetPassed === true;
-    const isFailed = isDriven && !isPassed;
-
-    if (isFailed) {
-      return {
-        container: 'bg-rose-500 border-rose-600 text-white shadow-xs hover:bg-rose-600 ring-2 ring-rose-400',
-        badge: 'bg-rose-700 text-white',
-        text: 'Re-drive',
-      };
-    }
-    if (isPassed) {
-      return {
-        container: 'bg-emerald-600 border-emerald-700 text-white shadow-xs hover:bg-emerald-700',
-        badge: 'bg-emerald-800 text-white',
-        text: pile.drivingRecord?.measuredLast10Cm ? `${pile.drivingRecord.measuredLast10Cm}cm` : 'ผ่าน',
-      };
-    }
-    return {
-      container: 'bg-white border-slate-300 text-slate-800 hover:border-slate-500 hover:bg-slate-50',
-      badge: 'bg-slate-100 text-slate-500',
-      text: 'รอตอก',
-    };
-  };
-
   // Unique building list
   const buildingList = useMemo(() => {
     const set = new Set<string>();
@@ -283,6 +248,7 @@ export default function PileNumberMatrix({
 
   // Open Edit Modal with pile values
   const handleOpenEdit = (pile: PileData) => {
+    setSelectedPile(pile);
     setEditPileNo(pile.pileNo);
     setEditGridLine(pile.gridLine);
     setEditBuilding(pile.building || 'Building A');
@@ -318,9 +284,10 @@ export default function PileNumberMatrix({
       );
       setSelectedPile((prev) => (prev ? { ...prev, ...data.pile } : null));
       setIsEditingPile(false);
+      toast.success('บันทึกการแก้ไขข้อมูลเสาเข็มสำเร็จ');
       router.refresh();
     } catch (err: any) {
-      alert(err.message);
+      toast.error(err.message || 'เกิดข้อผิดพลาดในการแก้ไข');
     } finally {
       setIsSavingEdit(false);
     }
@@ -330,7 +297,7 @@ export default function PileNumberMatrix({
   const handleAddSinglePile = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!newPileNo.trim() || !newGridLine.trim()) {
-      alert('กรุณาระบุรหัสเสาเข็มและ Grid Line');
+      toast.warning('กรุณาระบุรหัสเสาเข็มและ Grid Line');
       return;
     }
 
@@ -367,12 +334,13 @@ export default function PileNumberMatrix({
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || 'Failed to add pile');
 
+      toast.success(`เพิ่มเสาเข็ม "${newPileNo.trim()}" สำเร็จ`);
       setShowAddModal(false);
       setNewPileNo('');
       setNewGridLine('');
       router.refresh();
     } catch (err: any) {
-      alert(err.message);
+      toast.error(err.message || 'เกิดข้อผิดพลาดในการเพิ่มเสาเข็ม');
     } finally {
       setIsAddingPile(false);
     }
@@ -402,65 +370,82 @@ export default function PileNumberMatrix({
     const ids = Array.from(selectedPileIds);
     if (ids.length === 0) return;
 
-    const confirmed = window.confirm(
-      `⚠️ ยืนยันการลบเสาเข็มที่เลือกจำนวน ${ids.length} ต้น หรือไม่?\nข้อมูลการตอกและผลตรวจ QC ทั้งหมดจะถูกลบไปด้วยถาวร`
-    );
-    if (!confirmed) return;
+    setConfirmDialog({
+      isOpen: true,
+      title: 'ยืนยันการลบเสาเข็มที่เลือก',
+      message: `คุณต้องการลบเสาเข็มที่เลือกจำนวน ${ids.length} ต้น หรือไม่?\nข้อมูลการตอกและผลตรวจ QC ทั้งหมดของเสาเข็มเหล่านี้จะถูกลบไปด้วยถาวร`,
+      isDestructive: true,
+      confirmText: `ยืนยันลบ ${ids.length} ต้น`,
+      onConfirm: async () => {
+        try {
+          setIsDeletingBulk(true);
+          const targetProjectId = projectId || (typeof window !== 'undefined' ? localStorage.getItem('active_project_id') : undefined);
+          const res = await fetch('/api/piles/batch', {
+            method: 'DELETE',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              mode: 'SELECTED',
+              ids,
+              projectId: targetProjectId,
+            }),
+          });
+          const data = await res.json();
+          if (!res.ok) throw new Error(data.error || 'Failed to delete selected piles');
 
-    try {
-      setIsDeletingBulk(true);
-      const targetProjectId = projectId || (typeof window !== 'undefined' ? localStorage.getItem('active_project_id') : undefined);
-      const res = await fetch('/api/piles/batch', {
-        method: 'DELETE',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          mode: 'SELECTED',
-          ids,
-          projectId: targetProjectId,
-        }),
-      });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error || 'Failed to delete selected piles');
-
-      setSelectedPileIds(new Set());
-      setIsBulkMode(false);
-      router.refresh();
-    } catch (err: any) {
-      alert(err.message);
-    } finally {
-      setIsDeletingBulk(false);
-    }
+          setSelectedPileIds(new Set());
+          setIsBulkMode(false);
+          setConfirmDialog((prev) => ({ ...prev, isOpen: false }));
+          toast.success(`ลบเสาเข็มที่เลือกสำเร็จ ${ids.length} ต้น`);
+          router.refresh();
+        } catch (err: any) {
+          toast.error(err.message || 'เกิดข้อผิดพลาดในการลบเสาเข็ม');
+        } finally {
+          setIsDeletingBulk(false);
+        }
+      },
+    });
   };
 
   // Bulk Delete: All Pending
   const handleDeleteAllPending = async () => {
-    const confirmed = window.confirm(
-      `⚠️ ยืนยันการลบเสาเข็มที่ "ยังไม่ได้ตอก" ทั้งหมด (${notDrivenCount} ต้น) หรือไม่?\nเสาเข็มที่ตอกแล้วหรือมีผล QC จะไม่ถูกลบ`
-    );
-    if (!confirmed) return;
-
-    try {
-      setIsDeletingBulk(true);
-      const targetProjectId = projectId || (typeof window !== 'undefined' ? localStorage.getItem('active_project_id') : undefined);
-      const res = await fetch('/api/piles/batch', {
-        method: 'DELETE',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          mode: 'ALL_PENDING',
-          projectId: targetProjectId,
-        }),
-      });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error || 'Failed to delete pending piles');
-
-      setSelectedPileIds(new Set());
-      setIsBulkMode(false);
-      router.refresh();
-    } catch (err: any) {
-      alert(err.message);
-    } finally {
-      setIsDeletingBulk(false);
+    if (notDrivenCount === 0) {
+      toast.info('ไม่มีเสาเข็มที่ยังไม่ได้ตอก');
+      return;
     }
+
+    setConfirmDialog({
+      isOpen: true,
+      title: 'ยืนยันการลบเสาเข็มที่ยังไม่ได้ตอกทั้งหมด',
+      message: `คุณต้องการลบเสาเข็มที่ "ยังไม่ได้ตอก" ทั้งหมด (${notDrivenCount} ต้น) หรือไม่?\nเสาเข็มที่ตอกแล้วหรือมีผล QC จะไม่ได้รับผลกระทบ`,
+      isDestructive: true,
+      confirmText: `ยืนยันลบ ${notDrivenCount} ต้น`,
+      onConfirm: async () => {
+        try {
+          setIsDeletingBulk(true);
+          const targetProjectId = projectId || (typeof window !== 'undefined' ? localStorage.getItem('active_project_id') : undefined);
+          const res = await fetch('/api/piles/batch', {
+            method: 'DELETE',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              mode: 'ALL_PENDING',
+              projectId: targetProjectId,
+            }),
+          });
+          const data = await res.json();
+          if (!res.ok) throw new Error(data.error || 'Failed to delete pending piles');
+
+          setSelectedPileIds(new Set());
+          setIsBulkMode(false);
+          setConfirmDialog((prev) => ({ ...prev, isOpen: false }));
+          toast.success(`ลบเสาเข็มที่ยังไม่ได้ตอกสำเร็จ ${notDrivenCount} ต้น`);
+          router.refresh();
+        } catch (err: any) {
+          toast.error(err.message || 'เกิดข้อผิดพลาดในการลบเสาเข็ม');
+        } finally {
+          setIsDeletingBulk(false);
+        }
+      },
+    });
   };
 
   // Handle batch generate submission
@@ -468,7 +453,7 @@ export default function PileNumberMatrix({
     e.preventDefault();
     const count = parseInt(batchCount, 10);
     if (!count || count <= 0) {
-      alert('กรุณาระบุจำนวนเสาเข็มที่ถูกต้อง (มากกว่า 0)');
+      toast.warning('กรุณาระบุจำนวนเสาเข็มที่ถูกต้อง (มากกว่า 0)');
       return;
     }
 
@@ -493,14 +478,15 @@ export default function PileNumberMatrix({
         throw new Error(data.error || 'Failed to generate piles');
       }
 
+      toast.success(data.message || 'สร้างชุดเสาเข็มสำเร็จ');
       setBatchFeedback(data.message);
       setTimeout(() => {
         setShowBatchModal(false);
         setBatchFeedback(null);
         router.refresh();
-      }, 1200);
+      }, 1000);
     } catch (err: any) {
-      alert(err.message);
+      toast.error(err.message || 'เกิดข้อผิดพลาดในการสร้างเสาเข็ม');
     } finally {
       setIsSubmittingBatch(false);
     }
@@ -546,12 +532,13 @@ export default function PileNumberMatrix({
         )
       );
 
+      toast.success(`อัปเดตสเปกเสาเข็มสำเร็จ ${selectedPileIds.size} ต้น`);
       setShowBulkCriteriaModal(false);
       setIsBulkMode(false);
       setSelectedPileIds(new Set());
       router.refresh();
     } catch (err: any) {
-      alert(err.message);
+      toast.error(err.message || 'เกิดข้อผิดพลาดในการอัปเดตสเปก');
     } finally {
       setIsUpdatingBulkCriteria(false);
     }
@@ -573,95 +560,15 @@ export default function PileNumberMatrix({
   return (
     <div className="space-y-6">
       {/* 1. Summary KPI Bar */}
-      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-        {/* Total */}
-        <div
-          onClick={() => setFilterStatus('ALL')}
-          className={`cursor-pointer bg-white rounded-xl p-4 border transition ${
-            filterStatus === 'ALL'
-              ? 'border-indigo-500 shadow-md ring-2 ring-indigo-500/20'
-              : 'border-slate-200 hover:border-slate-300'
-          }`}
-        >
-          <div className="flex items-center justify-between">
-            <span className="text-xs font-bold text-slate-500 uppercase">จำนวนทั้งหมด</span>
-            <Layers className="w-4 h-4 text-indigo-500" />
-          </div>
-          <div className="mt-2 flex items-baseline gap-2">
-            <span className="text-2xl sm:text-3xl font-black text-slate-900">{totalCount}</span>
-            <span className="text-xs text-slate-400 font-semibold">ต้น</span>
-          </div>
-          <div className="mt-2 text-[11px] text-indigo-600 font-bold">
-            ความคืบหน้า {progressPercent}%
-          </div>
-        </div>
-
-        {/* Not Driven (Pending) - High Contrast Highlight */}
-        <div
-          onClick={() => setFilterStatus('NOT_DRIVEN')}
-          className={`cursor-pointer rounded-xl p-4 border transition ${
-            filterStatus === 'NOT_DRIVEN'
-              ? 'bg-amber-50/50 border-amber-500 shadow-md ring-2 ring-amber-500/20'
-              : 'bg-white border-slate-200 hover:border-slate-300'
-          }`}
-        >
-          <div className="flex items-center justify-between">
-            <span className="text-xs font-bold text-amber-700 uppercase">⚪ ยังไม่ได้ตอก</span>
-            <Clock className="w-4 h-4 text-amber-500" />
-          </div>
-          <div className="mt-2 flex items-baseline gap-2">
-            <span className="text-2xl sm:text-3xl font-black text-amber-600">{notDrivenCount}</span>
-            <span className="text-xs text-slate-400 font-semibold">ต้น</span>
-          </div>
-          <div className="mt-2 text-[11px] text-slate-500 font-medium">
-            {totalCount > 0 ? `เหลืออีก ${Math.round((notDrivenCount / totalCount) * 100)}%` : '-'}
-          </div>
-        </div>
-
-        {/* Passed */}
-        <div
-          onClick={() => setFilterStatus('PASSED')}
-          className={`cursor-pointer rounded-xl p-4 border transition ${
-            filterStatus === 'PASSED'
-              ? 'bg-emerald-50/50 border-emerald-500 shadow-md ring-2 ring-emerald-500/20'
-              : 'bg-white border-slate-200 hover:border-slate-300'
-          }`}
-        >
-          <div className="flex items-center justify-between">
-            <span className="text-xs font-bold text-emerald-700 uppercase">🟢 ตอกเสร็จ Set ผ่าน</span>
-            <CheckCircle2 className="w-4 h-4 text-emerald-500" />
-          </div>
-          <div className="mt-2 flex items-baseline gap-2">
-            <span className="text-2xl sm:text-3xl font-black text-emerald-600">{passedCount}</span>
-            <span className="text-xs text-slate-400 font-semibold">ต้น</span>
-          </div>
-          <div className="mt-2 text-[11px] text-emerald-700 font-medium">
-            {totalCount > 0 ? `${Math.round((passedCount / totalCount) * 100)}% ของโครงการ` : '-'}
-          </div>
-        </div>
-
-        {/* Issues / Failed */}
-        <div
-          onClick={() => setFilterStatus('FAILED')}
-          className={`cursor-pointer rounded-xl p-4 border transition ${
-            filterStatus === 'FAILED'
-              ? 'bg-rose-50/50 border-rose-500 shadow-md ring-2 ring-rose-500/20'
-              : 'bg-white border-slate-200 hover:border-slate-300'
-          }`}
-        >
-          <div className="flex items-center justify-between">
-            <span className="text-xs font-bold text-rose-700 uppercase">🔴 Re-drive / มีปัญหา</span>
-            <AlertCircle className="w-4 h-4 text-rose-500" />
-          </div>
-          <div className="mt-2 flex items-baseline gap-2">
-            <span className="text-2xl sm:text-3xl font-black text-rose-600">{failedCount}</span>
-            <span className="text-xs text-slate-400 font-semibold">ต้น</span>
-          </div>
-          <div className="mt-2 text-[11px] text-rose-600 font-medium">
-            {failedCount > 0 ? 'ต้องตอกซ้ำ / เจาะสำรวจ' : 'ไม่มีเสาเข็มติดปัญหา'}
-          </div>
-        </div>
-      </div>
+      <MatrixSummaryCards
+        totalCount={totalCount}
+        notDrivenCount={notDrivenCount}
+        passedCount={passedCount}
+        failedCount={failedCount}
+        progressPercent={progressPercent}
+        filterStatus={filterStatus}
+        setFilterStatus={setFilterStatus}
+      />
 
       {/* 2. Control Toolbar */}
       <div className="bg-white rounded-xl shadow-xs border border-slate-200 p-4 space-y-3">
@@ -838,6 +745,20 @@ export default function PileNumberMatrix({
               <LayoutGrid className="w-3.5 h-3.5" />
               <span className="hidden sm:inline">การ์ดใหญ่</span>
             </button>
+
+            <button
+              type="button"
+              onClick={() => setViewMode('DETAILED_TABLE')}
+              title="ตารางรายละเอียดข้อมูลวิศวกรรมเชิงลึก (รวมทุกคอลัมน์)"
+              className={`flex items-center gap-1 px-2.5 py-1 rounded-md font-bold transition ${
+                viewMode === 'DETAILED_TABLE'
+                  ? 'bg-white text-slate-900 shadow-xs'
+                  : 'text-slate-600 hover:text-slate-900'
+              }`}
+            >
+              <ClipboardList className="w-3.5 h-3.5" />
+              <span className="hidden sm:inline">ตารางละเอียด</span>
+            </button>
           </div>
         </div>
 
@@ -974,166 +895,53 @@ export default function PileNumberMatrix({
           <>
             {/* VIEW MODE 1: Table with 10 Columns (Standard Grid Table) */}
             {viewMode === 'TABLE_10' && (
-              <div className="overflow-x-auto">
-                <table className="w-full border-collapse">
-                  <thead>
-                    <tr className="bg-slate-50 border-b border-slate-200 text-slate-500 text-[10px] font-mono">
-                      <th className="p-2 text-left font-bold w-24 text-slate-400">ช่วงลำดับ</th>
-                      {[1, 2, 3, 4, 5, 6, 7, 8, 9, 10].map((col) => (
-                        <th key={col} className="p-2 text-center font-black text-slate-600">
-                          +{col}
-                        </th>
-                      ))}
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-slate-100">
-                    {rowsOf10.map((row, rIdx) => (
-                      <tr key={rIdx} className="hover:bg-slate-50/50 transition">
-                        <td className="p-2 text-[10px] font-mono font-bold text-slate-400 whitespace-nowrap">
-                          {row.rowLabel}
-                        </td>
-                        {row.items.map((pile, cIdx) => {
-                          if (!pile) {
-                            return <td key={cIdx} className="p-1 text-center"></td>;
-                          }
-                          const style = getPileStatusStyle(pile);
-                          const cleanNum = pile.pileNo.replace(/^[A-Za-z]+-0*/, '') || pile.pileNo;
-                          const isSelected = selectedPileIds.has(pile.id);
-
-                          return (
-                            <td key={pile.id} className="p-1">
-                              <button
-                                type="button"
-                                onClick={(e) => {
-                                  if (isBulkMode) {
-                                    toggleSelectPile(pile.id, e);
-                                  } else {
-                                    setSelectedPile(pile);
-                                  }
-                                }}
-                                title={`${pile.pileNo} (${pile.gridLine}) - ${style.text}`}
-                                className={`relative w-full py-2 px-1 rounded-lg border-2 flex flex-col items-center justify-center transition-transform active:scale-95 cursor-pointer ${
-                                  isBulkMode && isSelected
-                                    ? 'bg-rose-100 border-rose-500 text-rose-950 shadow-md ring-2 ring-rose-400 font-bold'
-                                    : style.container
-                                }`}
-                              >
-                                {isBulkMode && (
-                                  <span className="absolute top-1 right-1">
-                                    {isSelected ? (
-                                      <CheckSquare className="w-3.5 h-3.5 text-rose-600" />
-                                    ) : (
-                                      <Square className="w-3.5 h-3.5 text-slate-400" />
-                                    )}
-                                  </span>
-                                )}
-                                <span className="text-[9px] font-mono opacity-80 leading-none">
-                                  {pile.gridLine}
-                                </span>
-                                <span className="text-xs sm:text-sm font-black font-mono my-0.5 leading-none">
-                                  {cleanNum}
-                                </span>
-                                <span className="text-[8px] font-bold opacity-90 leading-none">
-                                  {style.text}
-                                </span>
-                              </button>
-                            </td>
-                          );
-                        })}
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
+              <MatrixTableView
+                rowsOf10={rowsOf10}
+                isBulkMode={isBulkMode}
+                selectedPileIds={selectedPileIds}
+                toggleSelectPile={toggleSelectPile}
+                setSelectedPile={setSelectedPile}
+              />
             )}
 
             {/* VIEW MODE 2: Dense Heatmap Grid (Ultra Compact for 300+ Piles) */}
             {viewMode === 'DENSE_HEATMAP' && (
-              <div className="grid grid-cols-6 sm:grid-cols-10 md:grid-cols-15 lg:grid-cols-20 gap-1.5">
-                {filteredPiles.map((pile) => {
-                  const style = getPileStatusStyle(pile);
-                  const cleanNum = pile.pileNo.replace(/^[A-Za-z]+-0*/, '') || pile.pileNo;
-                  const isSelected = selectedPileIds.has(pile.id);
-
-                  return (
-                    <button
-                      key={pile.id}
-                      type="button"
-                      onClick={(e) => {
-                        if (isBulkMode) {
-                          toggleSelectPile(pile.id, e);
-                        } else {
-                          setSelectedPile(pile);
-                        }
-                      }}
-                      title={`${pile.pileNo} (${pile.gridLine}) - ${style.text}`}
-                      className={`relative aspect-square p-1 rounded-md border-2 flex flex-col items-center justify-center transition-all hover:scale-110 active:scale-95 cursor-pointer text-center ${
-                        isBulkMode && isSelected
-                          ? 'bg-rose-200 border-rose-600 text-rose-950 shadow-md ring-2 ring-rose-500'
-                          : style.container
-                      }`}
-                    >
-                      {isBulkMode && isSelected && (
-                        <span className="absolute -top-1 -right-1 w-2.5 h-2.5 rounded-full bg-rose-600 border border-white"></span>
-                      )}
-                      <span className="text-[10px] font-black font-mono leading-none">
-                        {cleanNum}
-                      </span>
-                      <span className="text-[7px] font-medium opacity-80 leading-none mt-0.5 truncate max-w-full">
-                        {pile.gridLine}
-                      </span>
-                    </button>
-                  );
-                })}
-              </div>
+              <MatrixDenseHeatmap
+                filteredPiles={filteredPiles}
+                isBulkMode={isBulkMode}
+                selectedPileIds={selectedPileIds}
+                toggleSelectPile={toggleSelectPile}
+                setSelectedPile={setSelectedPile}
+              />
             )}
 
             {/* VIEW MODE 3: Cards View */}
             {viewMode === 'CARDS' && (
-              <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-6 lg:grid-cols-8 gap-3">
-                {filteredPiles.map((pile) => {
-                  const style = getPileStatusStyle(pile);
-                  const isSelected = selectedPileIds.has(pile.id);
+              <MatrixCardsView
+                filteredPiles={filteredPiles}
+                isBulkMode={isBulkMode}
+                selectedPileIds={selectedPileIds}
+                toggleSelectPile={toggleSelectPile}
+                setSelectedPile={setSelectedPile}
+              />
+            )}
 
-                  return (
-                    <button
-                      key={pile.id}
-                      type="button"
-                      onClick={(e) => {
-                        if (isBulkMode) {
-                          toggleSelectPile(pile.id, e);
-                        } else {
-                          setSelectedPile(pile);
-                        }
-                      }}
-                      className={`relative p-3 rounded-xl border-2 flex flex-col items-center justify-between text-center transition-transform active:scale-95 cursor-pointer min-h-[85px] ${
-                        isBulkMode && isSelected
-                          ? 'bg-rose-50 border-rose-400 text-rose-900 shadow-md ring-2 ring-rose-300'
-                          : style.container
-                      }`}
-                    >
-                      {isBulkMode && (
-                        <div className="absolute top-2 right-2">
-                          {isSelected ? (
-                            <CheckSquare className="w-4 h-4 text-rose-600" />
-                          ) : (
-                            <Square className="w-4 h-4 text-slate-400" />
-                          )}
-                        </div>
-                      )}
-                      <span className="text-[10px] font-mono tracking-tight opacity-80 uppercase">
-                        {pile.gridLine}
-                      </span>
-                      <span className="text-base font-black font-mono my-1">
-                        {pile.pileNo}
-                      </span>
-                      <span className={`text-[9px] font-bold px-2 py-0.5 rounded ${style.badge}`}>
-                        {style.text}
-                      </span>
-                    </button>
-                  );
-                })}
-              </div>
+            {/* VIEW MODE 4: Detailed Table View */}
+            {viewMode === 'DETAILED_TABLE' && (
+              <MatrixDetailedTable
+                filteredPiles={filteredPiles}
+                isBulkMode={isBulkMode}
+                selectedPileIds={selectedPileIds}
+                toggleSelectPile={toggleSelectPile}
+                handleSelectAllFiltered={handleSelectAllFiltered}
+                handleDeselectAll={handleDeselectAll}
+                setSelectedPile={setSelectedPile}
+                handleOpenEdit={handleOpenEdit}
+                onPileDeleted={(pileId) => {
+                  setPiles((prev) => prev.filter((p) => p.id !== pileId));
+                  router.refresh();
+                }}
+              />
             )}
           </>
         )}
@@ -1846,6 +1654,18 @@ export default function PileNumberMatrix({
           </div>
         </div>
       )}
+
+      {/* 9. Global Confirm Dialog */}
+      <ConfirmModal
+        isOpen={confirmDialog.isOpen}
+        onClose={() => setConfirmDialog((prev) => ({ ...prev, isOpen: false }))}
+        onConfirm={confirmDialog.onConfirm}
+        title={confirmDialog.title}
+        message={confirmDialog.message}
+        confirmText={confirmDialog.confirmText}
+        isDestructive={confirmDialog.isDestructive}
+        isLoading={isDeletingBulk}
+      />
     </div>
   );
 }

@@ -34,7 +34,12 @@ import {
   X,
   FileCheck,
   ChevronRight,
+  ChevronDown,
+  ChevronUp,
+  Sliders,
 } from 'lucide-react';
+import { useToast } from '@/components/ui/ToastProvider';
+import ConfirmModal from '@/components/ui/ConfirmModal';
 
 export interface ProjectCriteria {
   id: string;
@@ -207,14 +212,19 @@ export default function HileyCalculator({ initialProject, initialCriteriaId }: H
   const [applyToMatchingPiles, setApplyToMatchingPiles] = useState(true);
   const [applyToAllPiles, setApplyToAllPiles] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
-  const [toast, setToast] = useState<{ message: string; type: 'success' | 'error' } | null>(null);
+  const toast = useToast();
 
-  const showToast = (message: string, type: 'success' | 'error' = 'success') => {
-    setToast({ message, type });
-    setTimeout(() => {
-      setToast(null);
-    }, 3500);
-  };
+  // Collapsible Advanced Panels for Mobile Ergonomics
+  const [showAdvancedMaterial, setShowAdvancedMaterial] = useState(false);
+  const [showAdvancedEquipment, setShowAdvancedEquipment] = useState(false);
+
+  // Criteria Delete Confirmation Modal State
+  const [deleteModalState, setDeleteModalState] = useState<{
+    isOpen: boolean;
+    id: string;
+    name: string;
+    isDeleting?: boolean;
+  } | null>(null);
 
   // Keyboard shortcut: Escape to close modal
   useEffect(() => {
@@ -248,7 +258,7 @@ export default function HileyCalculator({ initialProject, initialCriteriaId }: H
     setSavePileType(crit.pileType);
     setSelectedSectionId(crit.sectionId || 'CUSTOM');
     setSelectedPreset('CUSTOM');
-    showToast(`โหลดรายการคำนวณ "${crit.name || crit.pileType}" เรียบร้อยแล้ว`, 'success');
+    toast.success(`โหลดรายการคำนวณ "${crit.name || crit.pileType}" เรียบร้อยแล้ว`);
   };
 
   const handleOpenSaveModal = (mode?: 'NEW' | 'UPDATE') => {
@@ -371,7 +381,7 @@ export default function HileyCalculator({ initialProject, initialCriteriaId }: H
 
   const handleConfirmSave = async () => {
     if (!saveName.trim()) {
-      showToast('กรุณาระบุชื่อรายการคำนวณ', 'error');
+      toast.error('กรุณาระบุชื่อรายการคำนวณ');
       return;
     }
 
@@ -436,21 +446,25 @@ export default function HileyCalculator({ initialProject, initialCriteriaId }: H
       const msg = data.updatedPilesCount > 0
         ? `${data.message} (ผูกกับเสาเข็ม ${data.updatedPilesCount} ต้น)`
         : data.message;
-      showToast(msg, 'success');
+      toast.success(msg);
     } catch (err: any) {
       console.error('Error saving criteria:', err);
-      showToast(err.message || 'เกิดข้อผิดพลาดในการบันทึก', 'error');
+      toast.error(err.message || 'เกิดข้อผิดพลาดในการบันทึก');
     } finally {
       setIsSaving(false);
     }
   };
 
-  const handleDeleteCriteria = async (id: string, name: string) => {
-    if (!window.confirm(`⚠️ ยืนยันการลบรายการคำนวณ "${name}" หรือไม่?\n(เสาเข็มที่ผูกอยู่จะถูกปลดออกโดยไม่สูญเสียข้อมูลการตอก)`)) {
-      return;
-    }
+  const handleDeleteCriteria = (id: string, name: string) => {
+    setDeleteModalState({ isOpen: true, id, name, isDeleting: false });
+  };
+
+  const confirmDeleteCriteria = async () => {
+    if (!deleteModalState) return;
+    const { id, name } = deleteModalState;
 
     try {
+      setDeleteModalState((prev) => (prev ? { ...prev, isDeleting: true } : null));
       const res = await fetch(`/api/criteria/${id}`, { method: 'DELETE' });
       if (!res.ok) {
         const errData = await res.json();
@@ -460,10 +474,12 @@ export default function HileyCalculator({ initialProject, initialCriteriaId }: H
       if (selectedCriteriaId === id) {
         setSelectedCriteriaId(null);
       }
-      showToast(`ลบรายการคำนวณ "${name}" เรียบร้อยแล้ว`, 'success');
+      toast.success(`ลบรายการคำนวณ "${name}" เรียบร้อยแล้ว`);
+      setDeleteModalState(null);
     } catch (err: any) {
       console.error('Error deleting criteria:', err);
-      showToast(err.message || 'เกิดข้อผิดพลาดในการลบ', 'error');
+      toast.error(err.message || 'เกิดข้อผิดพลาดในการลบ');
+      setDeleteModalState((prev) => (prev ? { ...prev, isDeleting: false } : null));
     }
   };
 
@@ -481,24 +497,6 @@ export default function HileyCalculator({ initialProject, initialCriteriaId }: H
 
   return (
     <div className="space-y-6 relative">
-      {/* Floating Toast Notification */}
-      {toast && (
-        <div
-          className={`fixed top-5 right-5 z-50 px-4 py-3 rounded-xl shadow-lg border flex items-center gap-2.5 text-xs font-bold transition-all duration-300 animate-in fade-in slide-in-from-top-2 ${
-            toast.type === 'success'
-              ? 'bg-emerald-950/95 text-emerald-100 border-emerald-700 shadow-emerald-950/20'
-              : 'bg-rose-950/95 text-rose-100 border-rose-700 shadow-rose-950/20'
-          }`}
-        >
-          {toast.type === 'success' ? (
-            <CheckCircle2 className="w-4 h-4 text-emerald-400 flex-shrink-0" />
-          ) : (
-            <AlertTriangle className="w-4 h-4 text-rose-400 flex-shrink-0" />
-          )}
-          <span>{toast.message}</span>
-        </div>
-      )}
-
       {/* Project Calculation Criteria Selector Bar */}
       <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-4">
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-slate-100">
@@ -720,140 +718,159 @@ export default function HileyCalculator({ initialProject, initialCriteriaId }: H
               </div>
             </div>
 
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-              {/* Concrete Strength fc' */}
-              <div>
-                <label className="block text-xs font-semibold text-slate-700 mb-1">
-                  กำลังอัดคอนกรีต ($f&apos;_c$) (Concrete Strength)
-                </label>
-                <div className="relative">
-                  <input
-                    type="number"
-                    step="10"
-                    value={input.concreteStrengthKsc || ''}
-                    onChange={(e) => {
-                      const val = e.target.value === '' ? 0 : parseFloat(e.target.value) || 0;
-                      handleConcreteStrengthChange(val);
-                    }}
-                    placeholder="350"
-                    className="w-full text-sm font-semibold text-slate-800 bg-slate-50 border border-slate-300 rounded-lg px-3 py-2 focus:bg-white focus:ring-2 focus:ring-amber-500 focus:outline-none"
-                  />
-                  <span className="absolute right-3 top-2 text-xs font-medium text-slate-400">ksc (kg/cm²)</span>
-                </div>
-                <p className="text-[11px] text-amber-700 mt-1">
-                  * เมื่อเปลี่ยนค่า E จะคำนวณใหม่ให้อัตโนมัติ (15,100&radic;f&apos;c)
-                </p>
+            {/* Primary Pile Length L */}
+            <div>
+              <label className="block text-xs font-semibold text-slate-700 mb-1">
+                ความยาวเสาเข็มรวม ($L$) (Total Pile Length)
+              </label>
+              <div className="relative">
+                <input
+                  type="number"
+                  step="0.5"
+                  value={input.pileLengthM || ''}
+                  onChange={(e) => handleLengthChange(e.target.value === '' ? 0 : parseFloat(e.target.value) || 0)}
+                  placeholder="20.0"
+                  className="w-full text-sm font-semibold text-slate-800 bg-slate-50 border border-slate-300 rounded-lg px-3 py-2 focus:bg-white focus:ring-2 focus:ring-amber-500 focus:outline-none"
+                />
+                <span className="absolute right-3 top-2 text-xs font-medium text-slate-400">เมตร (m)</span>
               </div>
-
-              {/* Elastic Modulus Ec */}
-              <div>
-                <div className="flex items-center justify-between mb-1">
-                  <label className="text-xs font-semibold text-slate-700">
-                    โมดูลัสยืดหยุ่น ($E_c$) (Elastic Modulus)
-                  </label>
-                  <button
-                    type="button"
-                    onClick={handleAutoEc}
-                    className="text-[10px] text-amber-700 bg-amber-50 hover:bg-amber-100 border border-amber-200 px-1.5 py-0.5 rounded font-semibold transition flex items-center gap-1 cursor-pointer"
-                    title="คำนวณจากสูตร วสท./ACI: 15,100 * sqrt(fc')"
-                  >
-                    <Zap className="w-2.5 h-2.5" />
-                    15,100&radic;f&apos;c
-                  </button>
-                </div>
-                <div className="relative">
-                  <input
-                    type="number"
-                    step="5000"
-                    value={input.elasticModulusKsc || ''}
-                    onChange={(e) => handleInputChange('elasticModulusKsc', e.target.value === '' ? 0 : parseFloat(e.target.value) || 0)}
-                    placeholder="280000"
-                    className="w-full text-sm font-semibold text-slate-800 bg-slate-50 border border-slate-300 rounded-lg px-3 py-2 focus:bg-white focus:ring-2 focus:ring-amber-500 focus:outline-none"
-                  />
-                  <span className="absolute right-3 top-2 text-xs font-medium text-slate-400">ksc</span>
-                </div>
-                <p className="text-[11px] text-slate-400 mt-1">
-                  * คอนกรีตทั่วไปประมาณ 2.5&times;10⁵ - 3.2&times;10⁵ ksc (แก้ไขค่าเองได้)
-                </p>
-              </div>
-
-              {/* Section Area A */}
-              <div>
-                <label className="block text-xs font-semibold text-slate-700 mb-1">
-                  พื้นที่หน้าตัดเสาเข็ม ($A$) (Section Area)
-                </label>
-                <div className="relative">
-                  <input
-                    type="number"
-                    step="1"
-                    value={input.pileSectionAreaCm2 || ''}
-                    onChange={(e) => handleAreaChange(e.target.value === '' ? 0 : parseFloat(e.target.value) || 0)}
-                    placeholder="484"
-                    className="w-full text-sm font-semibold text-slate-800 bg-slate-50 border border-slate-300 rounded-lg px-3 py-2 focus:bg-white focus:ring-2 focus:ring-amber-500 focus:outline-none"
-                  />
-                  <span className="absolute right-3 top-2 text-xs font-medium text-slate-400">cm²</span>
-                </div>
-                <p className="text-[11px] text-slate-400 mt-1">
-                  * เปลี่ยนตามขนาดเข็มด้านบน หรือพิมพ์ตัวเลขแก้ไขโดยตรง
-                </p>
-              </div>
-
-              {/* Pile Length L */}
-              <div>
-                <label className="block text-xs font-semibold text-slate-700 mb-1">
-                  ความยาวเสาเข็มรวม ($L$) (Total Pile Length)
-                </label>
-                <div className="relative">
-                  <input
-                    type="number"
-                    step="0.5"
-                    value={input.pileLengthM || ''}
-                    onChange={(e) => handleLengthChange(e.target.value === '' ? 0 : parseFloat(e.target.value) || 0)}
-                    placeholder="20.0"
-                    className="w-full text-sm font-semibold text-slate-800 bg-slate-50 border border-slate-300 rounded-lg px-3 py-2 focus:bg-white focus:ring-2 focus:ring-amber-500 focus:outline-none"
-                  />
-                  <span className="absolute right-3 top-2 text-xs font-medium text-slate-400">เมตร (m)</span>
-                </div>
-                <p className="text-[11px] text-slate-400 mt-1">
-                  * ความยาวรวมทุกท่อนที่ตอกลงดิน (รวมจุดต่อท่อน)
-                </p>
-              </div>
+              <p className="text-[11px] text-slate-400 mt-1">
+                * ความยาวรวมทุกท่อนที่ตอกลงดิน (รวมจุดต่อท่อน)
+              </p>
             </div>
 
-            {/* Theoretical Derived Box */}
-            <div className="p-3 bg-amber-50/70 rounded-lg border border-amber-200/80 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 text-xs">
-              <div className="space-y-1">
-                <span className="font-bold text-amber-900 block">
-                  การวิเคราะห์เชิงทฤษฎี (Theoretical Derivation):
-                </span>
-                <div className="text-slate-700 flex flex-wrap gap-x-4 gap-y-1">
-                  <span>
-                    น้ำหนักเสาเข็มตามมิติ: <strong className="text-slate-900">{hileyResult.estimatedPileWeightTons ?? '-'} ตัน</strong>
-                  </span>
-                  <span>
-                    ค่า Shaft Elastic C₂ (Ru·L/AE): <strong className="text-slate-900">{hileyResult.theoreticalC2Cm ?? '-'} cm</strong>
-                  </span>
+            {/* Collapsible Advanced Material Properties */}
+            <div className="border border-slate-200 rounded-xl overflow-hidden">
+              <button
+                type="button"
+                onClick={() => setShowAdvancedMaterial(!showAdvancedMaterial)}
+                className="w-full flex items-center justify-between p-3 bg-slate-50 hover:bg-slate-100 text-xs font-bold text-slate-700 transition select-none"
+              >
+                <div className="flex items-center gap-2">
+                  <Sliders className="w-3.5 h-3.5 text-amber-600" />
+                  <span>พารามิเตอร์วัสดุเชิงลึก ($f&apos;_c$, $E_c$, $A$, ทฤษฎี $C_2$)</span>
                 </div>
-              </div>
+                <div className="flex items-center gap-1 text-slate-500 text-[11px] font-medium">
+                  <span>{showAdvancedMaterial ? 'ซ่อนพารามิเตอร์' : 'แสดงรายละเอียด'}</span>
+                  {showAdvancedMaterial ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
+                </div>
+              </button>
 
-              <div className="flex items-center gap-2 flex-shrink-0">
-                <button
-                  type="button"
-                  onClick={handleApplyEstimatedWeight}
-                  className="px-2 py-1 bg-white hover:bg-amber-100 border border-amber-300 text-amber-900 font-semibold rounded text-[11px] transition shadow-xs cursor-pointer"
-                  title="ใช้น้ำหนักเสาเข็มคำนวณเป็นค่าน้ำหนัก P"
-                >
-                  ใช้ P ({hileyResult.estimatedPileWeightTons} t)
-                </button>
-                <button
-                  type="button"
-                  onClick={handleApplyTheoreticalC2}
-                  className="px-2 py-1 bg-amber-500 hover:bg-amber-600 text-slate-950 font-bold rounded text-[11px] transition shadow-xs cursor-pointer"
-                  title="ใช้ค่า C2 ทฤษฎีเป็นค่า C ในสูตร Hiley"
-                >
-                  ใช้ C ({hileyResult.theoreticalC2Cm} cm)
-                </button>
-              </div>
+              {showAdvancedMaterial && (
+                <div className="p-4 space-y-4 border-t border-slate-200 bg-white animate-in fade-in">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                    {/* Concrete Strength fc' */}
+                    <div>
+                      <label className="block text-xs font-semibold text-slate-700 mb-1">
+                        กำลังอัดคอนกรีต ($f&apos;_c$) (Concrete Strength)
+                      </label>
+                      <div className="relative">
+                        <input
+                          type="number"
+                          step="10"
+                          value={input.concreteStrengthKsc || ''}
+                          onChange={(e) => {
+                            const val = e.target.value === '' ? 0 : parseFloat(e.target.value) || 0;
+                            handleConcreteStrengthChange(val);
+                          }}
+                          placeholder="350"
+                          className="w-full text-sm font-semibold text-slate-800 bg-slate-50 border border-slate-300 rounded-lg px-3 py-2 focus:bg-white focus:ring-2 focus:ring-amber-500 focus:outline-none"
+                        />
+                        <span className="absolute right-3 top-2 text-xs font-medium text-slate-400">ksc</span>
+                      </div>
+                      <p className="text-[11px] text-amber-700 mt-1">
+                        * เมื่อเปลี่ยนค่า E จะคำนวณใหม่ให้อัตโนมัติ (15,100&radic;f&apos;c)
+                      </p>
+                    </div>
+
+                    {/* Elastic Modulus Ec */}
+                    <div>
+                      <div className="flex items-center justify-between mb-1">
+                        <label className="text-xs font-semibold text-slate-700">
+                          โมดูลัสยืดหยุ่น ($E_c$) (Elastic Modulus)
+                        </label>
+                        <button
+                          type="button"
+                          onClick={handleAutoEc}
+                          className="text-[10px] text-amber-700 bg-amber-50 hover:bg-amber-100 border border-amber-200 px-1.5 py-0.5 rounded font-semibold transition flex items-center gap-1 cursor-pointer"
+                          title="คำนวณจากสูตร วสท./ACI: 15,100 * sqrt(fc')"
+                        >
+                          <Zap className="w-2.5 h-2.5" />
+                          15,100&radic;f&apos;c
+                        </button>
+                      </div>
+                      <div className="relative">
+                        <input
+                          type="number"
+                          step="5000"
+                          value={input.elasticModulusKsc || ''}
+                          onChange={(e) => handleInputChange('elasticModulusKsc', e.target.value === '' ? 0 : parseFloat(e.target.value) || 0)}
+                          placeholder="280000"
+                          className="w-full text-sm font-semibold text-slate-800 bg-slate-50 border border-slate-300 rounded-lg px-3 py-2 focus:bg-white focus:ring-2 focus:ring-amber-500 focus:outline-none"
+                        />
+                        <span className="absolute right-3 top-2 text-xs font-medium text-slate-400">ksc</span>
+                      </div>
+                    </div>
+
+                    {/* Section Area A */}
+                    <div className="sm:col-span-2">
+                      <label className="block text-xs font-semibold text-slate-700 mb-1">
+                        พื้นที่หน้าตัดเสาเข็ม ($A$) (Section Area)
+                      </label>
+                      <div className="relative">
+                        <input
+                          type="number"
+                          step="1"
+                          value={input.pileSectionAreaCm2 || ''}
+                          onChange={(e) => handleAreaChange(e.target.value === '' ? 0 : parseFloat(e.target.value) || 0)}
+                          placeholder="484"
+                          className="w-full text-sm font-semibold text-slate-800 bg-slate-50 border border-slate-300 rounded-lg px-3 py-2 focus:bg-white focus:ring-2 focus:ring-amber-500 focus:outline-none"
+                        />
+                        <span className="absolute right-3 top-2 text-xs font-medium text-slate-400">cm²</span>
+                      </div>
+                      <p className="text-[11px] text-slate-400 mt-1">
+                        * เปลี่ยนตามขนาดเข็มด้านบน หรือพิมพ์ตัวเลขระบุเองหากเป็นเข็มหน้าตัดพิเศษ
+                      </p>
+                    </div>
+                  </div>
+
+                  {/* Theoretical Derived Box */}
+                  <div className="p-3 bg-amber-50/70 rounded-lg border border-amber-200/80 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 text-xs">
+                    <div className="space-y-1">
+                      <span className="font-bold text-amber-900 block">
+                        การวิเคราะห์เชิงทฤษฎี (Theoretical Derivation):
+                      </span>
+                      <div className="text-slate-700 flex flex-wrap gap-x-4 gap-y-1">
+                        <span>
+                          น้ำหนักเสาเข็มตามมิติ: <strong className="text-slate-900">{hileyResult.estimatedPileWeightTons ?? '-'} ตัน</strong>
+                        </span>
+                        <span>
+                          ค่า Shaft Elastic C₂ (Ru·L/AE): <strong className="text-slate-900">{hileyResult.theoreticalC2Cm ?? '-'} cm</strong>
+                        </span>
+                      </div>
+                    </div>
+
+                    <div className="flex items-center gap-2 flex-shrink-0">
+                      <button
+                        type="button"
+                        onClick={handleApplyEstimatedWeight}
+                        className="px-2 py-1 bg-white hover:bg-amber-100 border border-amber-300 text-amber-900 font-semibold rounded text-[11px] transition shadow-xs cursor-pointer"
+                        title="ใช้น้ำหนักเสาเข็มคำนวณเป็นค่าน้ำหนัก P"
+                      >
+                        ใช้ P ({hileyResult.estimatedPileWeightTons} t)
+                      </button>
+                      <button
+                        type="button"
+                        onClick={handleApplyTheoreticalC2}
+                        className="px-2 py-1 bg-amber-500 hover:bg-amber-600 text-slate-950 font-bold rounded text-[11px] transition shadow-xs cursor-pointer"
+                        title="ใช้ค่า C2 ทฤษฎีเป็นค่า C ในสูตร Hiley"
+                      >
+                        ใช้ C ({hileyResult.theoreticalC2Cm} cm)
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              )}
             </div>
           </div>
 
@@ -864,6 +881,7 @@ export default function HileyCalculator({ initialProject, initialCriteriaId }: H
               <span>2. พารามิเตอร์การออกแบบและเครื่องตอก (Driving & Hammer Equipment)</span>
             </h2>
 
+            {/* Core Driving Inputs */}
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               {/* Ra */}
               <div>
@@ -881,21 +899,6 @@ export default function HileyCalculator({ initialProject, initialCriteriaId }: H
                   />
                   <span className="absolute right-3 top-2 text-xs font-medium text-slate-400">ตัน (tons)</span>
                 </div>
-              </div>
-
-              {/* Safety Factor */}
-              <div>
-                <label className="block text-xs font-semibold text-slate-700 mb-1">
-                  อัตราส่วนความปลอดภัย ($FS$) (Safety Factor)
-                </label>
-                <input
-                  type="number"
-                  step="0.1"
-                  value={input.safetyFactor || ''}
-                  onChange={(e) => handleInputChange('safetyFactor', e.target.value === '' ? 0 : parseFloat(e.target.value) || 0)}
-                  placeholder="2.5"
-                  className="w-full text-sm font-semibold text-slate-800 bg-slate-50 border border-slate-300 rounded-lg px-3 py-2 focus:bg-white focus:ring-2 focus:ring-amber-500 focus:outline-none"
-                />
               </div>
 
               {/* Hammer Weight */}
@@ -934,45 +937,10 @@ export default function HileyCalculator({ initialProject, initialCriteriaId }: H
                 </div>
               </div>
 
-              {/* Pile Weight */}
-              <div>
-                <label className="block text-xs font-semibold text-slate-700 mb-1">
-                  น้ำหนักเสาเข็ม + หมวกครอบ ($P$)
-                </label>
-                <div className="relative">
-                  <input
-                    type="number"
-                    step="0.1"
-                    value={input.pileWeightTons || ''}
-                    onChange={(e) => handleInputChange('pileWeightTons', e.target.value === '' ? 0 : parseFloat(e.target.value) || 0)}
-                    placeholder="1.8"
-                    className="w-full text-sm font-semibold text-slate-800 bg-slate-50 border border-slate-300 rounded-lg px-3 py-2 focus:bg-white focus:ring-2 focus:ring-amber-500 focus:outline-none"
-                  />
-                  <span className="absolute right-3 top-2 text-xs font-medium text-slate-400">ตัน (tons)</span>
-                </div>
-              </div>
-
-              {/* Cushion Coeff e */}
-              <div>
-                <label className="block text-xs font-semibold text-slate-700 mb-1">
-                  สัมประสิทธิ์การคืนตัว ($e$) (Restitution)
-                </label>
-                <select
-                  value={input.restitutionCoeff}
-                  onChange={(e) => handleInputChange('restitutionCoeff', parseFloat(e.target.value) || 0.25)}
-                  className="w-full text-sm font-semibold text-slate-800 bg-slate-50 border border-slate-300 rounded-lg px-3 py-2 focus:bg-white focus:ring-2 focus:ring-amber-500 focus:outline-none"
-                >
-                  <option value={0.25}>0.25 - หมอนไม้ (Wood Cushion)</option>
-                  <option value={0.35}>0.35 - หมอนคอมโพสิต / พลาสติกแข็ง</option>
-                  <option value={0.40}>0.40 - Micarta / Phenolic cushion</option>
-                  <option value={0.55}>0.55 - เหล็กกระทบเหล็ก (Steel anvil)</option>
-                </select>
-              </div>
-
               {/* Elastic Compression C */}
-              <div className="sm:col-span-2">
+              <div>
                 <label className="block text-xs font-semibold text-slate-700 mb-1">
-                  ค่าการทรุดตัวยืดหยุ่นชั่วคราว ($C = C_1 + C_2 + C_3$) (Temporary Compression)
+                  การทรุดตัวยืดหยุ่น ($C$) (Temporary Compression)
                 </label>
                 <div className="relative">
                   <input
@@ -985,10 +953,82 @@ export default function HileyCalculator({ initialProject, initialCriteriaId }: H
                   />
                   <span className="absolute right-3 top-2 text-xs font-medium text-slate-400">ซม. (cm)</span>
                 </div>
-                <p className="text-[11px] text-slate-400 mt-1">
-                  * ค่าคำนวณทฤษฎี C₂ = {hileyResult.theoreticalC2Cm ?? '-'} cm | วัดจริงหน้างานมักอยู่ระหว่าง 1.0 - 1.5 cm
-                </p>
               </div>
+            </div>
+
+            {/* Collapsible Advanced Equipment & Factor Settings */}
+            <div className="border border-slate-200 rounded-xl overflow-hidden">
+              <button
+                type="button"
+                onClick={() => setShowAdvancedEquipment(!showAdvancedEquipment)}
+                className="w-full flex items-center justify-between p-3 bg-slate-50 hover:bg-slate-100 text-xs font-bold text-slate-700 transition select-none"
+              >
+                <div className="flex items-center gap-2">
+                  <Sliders className="w-3.5 h-3.5 text-amber-600" />
+                  <span>พารามิเตอร์อุปกรณ์ขั้นสูง ($FS$, น้ำหนัก $P$, หมอนรอง $e$)</span>
+                </div>
+                <div className="flex items-center gap-1 text-slate-500 text-[11px] font-medium">
+                  <span>{showAdvancedEquipment ? 'ซ่อนพารามิเตอร์' : 'แสดงรายละเอียด'}</span>
+                  {showAdvancedEquipment ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
+                </div>
+              </button>
+
+              {showAdvancedEquipment && (
+                <div className="p-4 grid grid-cols-1 sm:grid-cols-2 gap-4 border-t border-slate-200 bg-white animate-in fade-in">
+                  {/* Safety Factor */}
+                  <div>
+                    <label className="block text-xs font-semibold text-slate-700 mb-1">
+                      อัตราส่วนความปลอดภัย ($FS$) (Safety Factor)
+                    </label>
+                    <input
+                      type="number"
+                      step="0.1"
+                      value={input.safetyFactor || ''}
+                      onChange={(e) => handleInputChange('safetyFactor', e.target.value === '' ? 0 : parseFloat(e.target.value) || 0)}
+                      placeholder="2.5"
+                      className="w-full text-sm font-semibold text-slate-800 bg-slate-50 border border-slate-300 rounded-lg px-3 py-2 focus:bg-white focus:ring-2 focus:ring-amber-500 focus:outline-none"
+                    />
+                    <p className="text-[11px] text-slate-400 mt-1">
+                      * ค่ามาตรฐานทั่วไปคือ 2.5
+                    </p>
+                  </div>
+
+                  {/* Pile Weight */}
+                  <div>
+                    <label className="block text-xs font-semibold text-slate-700 mb-1">
+                      น้ำหนักเสาเข็ม + หมวกครอบ ($P$) (Pile Weight)
+                    </label>
+                    <div className="relative">
+                      <input
+                        type="number"
+                        step="0.1"
+                        value={input.pileWeightTons || ''}
+                        onChange={(e) => handleInputChange('pileWeightTons', e.target.value === '' ? 0 : parseFloat(e.target.value) || 0)}
+                        placeholder="1.8"
+                        className="w-full text-sm font-semibold text-slate-800 bg-slate-50 border border-slate-300 rounded-lg px-3 py-2 focus:bg-white focus:ring-2 focus:ring-amber-500 focus:outline-none"
+                      />
+                      <span className="absolute right-3 top-2 text-xs font-medium text-slate-400">ตัน (tons)</span>
+                    </div>
+                  </div>
+
+                  {/* Cushion Coeff e */}
+                  <div className="sm:col-span-2">
+                    <label className="block text-xs font-semibold text-slate-700 mb-1">
+                      สัมประสิทธิ์การคืนตัวหมอนรอง ($e$) (Restitution Coefficient)
+                    </label>
+                    <select
+                      value={input.restitutionCoeff}
+                      onChange={(e) => handleInputChange('restitutionCoeff', parseFloat(e.target.value) || 0.25)}
+                      className="w-full text-sm font-semibold text-slate-800 bg-slate-50 border border-slate-300 rounded-lg px-3 py-2 focus:bg-white focus:ring-2 focus:ring-amber-500 focus:outline-none"
+                    >
+                      <option value={0.25}>0.25 - หมอนไม้ (Wood Cushion - ค่ามาตรฐาน)</option>
+                      <option value={0.35}>0.35 - หมอนคอมโพสิต / พลาสติกแข็ง (Composite Cushion)</option>
+                      <option value={0.40}>0.40 - Micarta / Phenolic cushion</option>
+                      <option value={0.55}>0.55 - เหล็กกระทบเหล็ก (Steel anvil)</option>
+                    </select>
+                  </div>
+                </div>
+              )}
             </div>
           </div>
         </div>
@@ -1438,6 +1478,19 @@ export default function HileyCalculator({ initialProject, initialCriteriaId }: H
           </div>
         </div>
       )}
+
+      {/* Criteria Delete Confirmation Modal */}
+      <ConfirmModal
+        isOpen={!!deleteModalState?.isOpen}
+        title="ยืนยันการลบรายการคำนวณ / Confirm Deletion"
+        message={`คุณต้องการลบสเปกการคำนวณ "${deleteModalState?.name}" ใช่หรือไม่? หากมีเสาเข็มที่ผูกกับสเปกนี้อยู่ เสาเข็มเหล่านั้นจะถูกปลดจากการอ้างอิงสเปกนี้`}
+        confirmText="ยืนยันการลบ"
+        cancelText="ยกเลิก"
+        isDestructive={true}
+        isLoading={deleteModalState?.isDeleting}
+        onConfirm={confirmDeleteCriteria}
+        onClose={() => setDeleteModalState(null)}
+      />
     </div>
   );
 }

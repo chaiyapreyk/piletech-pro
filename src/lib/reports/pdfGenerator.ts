@@ -16,10 +16,10 @@ export function exportDailyLogPDF(
   });
 
   const pageWidth = doc.internal.pageSize.getWidth();
-  const today = new Date().toLocaleDateString('th-TH', {
+  const today = new Date().toLocaleDateString('en-GB', {
     year: 'numeric',
-    month: 'long',
-    day: 'numeric',
+    month: 'short',
+    day: '2-digit',
   });
 
   // Header Banner
@@ -132,10 +132,10 @@ export function exportDailyLogPDF(
   const sigPositions = [14, 82, 150, 218];
 
   const signatures = [
-    { title: 'Site Engineer (วิศวกรสนาม)', label: 'Recorded By' },
-    { title: 'QA/QC Inspector (ผู้ตรวจสอบ)', label: 'Checked By' },
-    { title: 'Construction Manager (CM)', label: 'Approved By' },
-    { title: 'Consultant Engineer (ที่ปรึกษา)', label: 'Acknowledged By' },
+    { title: 'Site Engineer', label: 'Recorded By' },
+    { title: 'QA/QC Inspector', label: 'Checked By' },
+    { title: 'Construction Manager', label: 'Approved By' },
+    { title: 'Consultant Engineer', label: 'Acknowledged By' },
   ];
 
   signatures.forEach((sig, i) => {

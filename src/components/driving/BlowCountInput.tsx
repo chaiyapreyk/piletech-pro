@@ -21,8 +21,10 @@ import {
   Scissors,
   Table as TableIcon,
   LayoutGrid,
+  Delete,
 } from 'lucide-react';
 import RollingWheel from '@/components/ui/RollingWheel';
+import ConfirmModal from '@/components/ui/ConfirmModal';
 
 interface Props {
   blowCounts: (number | null)[];
@@ -69,8 +71,18 @@ export default function BlowCountInput({
 
   const [currentInput, setCurrentInput] = useState<string>('20');
   const [wheelBlowValue, setWheelBlowValue] = useState<number>(25);
-  const [inputMode, setInputMode] = useState<'WHEEL' | 'KEYBOARD'>('WHEEL');
+  const [numpadValue, setNumpadValue] = useState<string>('25');
+  const [inputMode, setInputMode] = useState<'WHEEL' | 'NUMPAD' | 'KEYBOARD'>('NUMPAD');
   const [viewFormat, setViewFormat] = useState<'TABLE' | 'CHIPS'>('TABLE');
+
+  // Confirmation Modal state
+  const [confirmAction, setConfirmAction] = useState<{
+    isOpen: boolean;
+    title: string;
+    message: string;
+    onConfirm: () => void;
+    isDestructive?: boolean;
+  } | null>(null);
 
   // Recorded items selection and deletion state
   const [isSelectDeleteMode, setIsSelectDeleteMode] = useState(false);
@@ -209,19 +221,65 @@ export default function BlowCountInput({
 
   // Clear all intervals
   const handleClearAll = () => {
-    if (window.confirm('⚠️ ยืนยันการล้างข้อมูล Penetration Log ทั้งหมดหรือไม่?')) {
-      onChange([]);
-      setSelectedIndices(new Set());
-      setIsSelectDeleteMode(false);
-    }
+    setConfirmAction({
+      isOpen: true,
+      title: 'ยืนยันการล้างข้อมูล / Confirm Clear All',
+      message: 'คุณต้องการล้างข้อมูล Penetration Log ทั้งหมดใช่หรือไม่? การกระทำนี้ไม่สามารถย้อนกลับได้',
+      isDestructive: true,
+      onConfirm: () => {
+        onChange([]);
+        setSelectedIndices(new Set());
+        setIsSelectDeleteMode(false);
+        setConfirmAction(null);
+      },
+    });
   };
 
   // Trim trailing unreached intervals (Set reached early before window length)
   const handleTrimToCurrent = () => {
     if (blowCounts.length > 0) {
-      if (window.confirm(`✂️ ยืนยันการปรับความยาวช่วงบันทึกสิ้นสุดที่ฟุตที่ ${currentDrivenCount} หรือไม่?`)) {
-        setWindowLength(currentDrivenCount);
-      }
+      setConfirmAction({
+        isOpen: true,
+        title: 'ยืนยันการปรับความยาวช่วงบันทึก / Trim Window Length',
+        message: `เสาเข็มได้เกณฑ์ Last 10 Blows ก่อนครบกำหนด คุณต้องการปรับความยาวช่วงบันทึกสิ้นสุดที่${unit === 'FEET' ? 'ฟุตที่' : 'เมตรที่'} ${currentDrivenCount} หรือไม่?`,
+        isDestructive: false,
+        onConfirm: () => {
+          setWindowLength(currentDrivenCount);
+          setConfirmAction(null);
+        },
+      });
+    }
+  };
+
+  // Numpad input handlers
+  const handleNumpadDigit = (digit: string) => {
+    setNumpadValue((prev) => {
+      if (prev === '0' || prev === '') return digit;
+      const combined = prev + digit;
+      if (parseInt(combined) > 200) return '200';
+      return combined;
+    });
+  };
+
+  const handleNumpadBackspace = () => {
+    setNumpadValue((prev) => (prev.length > 1 ? prev.slice(0, -1) : ''));
+  };
+
+  const handleNumpadClear = () => {
+    setNumpadValue('');
+  };
+
+  const handleNumpadNudge = (delta: number) => {
+    const current = parseInt(numpadValue) || 20;
+    const nextVal = Math.max(1, Math.min(200, current + delta));
+    setNumpadValue(nextVal.toString());
+  };
+
+  const handleNumpadSubmit = () => {
+    const val = parseInt(numpadValue) || 0;
+    if (val > 0) {
+      handleAddInterval(val);
+      setWheelBlowValue(val);
     }
   };
 
@@ -295,8 +353,20 @@ export default function BlowCountInput({
             </div>
           </div>
 
-          {/* Rolling Wheel vs Keyboard Toggle */}
+          {/* Input Mode Selector: Numpad (Default) vs Wheel vs Keyboard */}
           <div className="flex items-center bg-slate-100 p-1 rounded-lg border border-slate-200 self-start sm:self-auto shadow-2xs">
+            <button
+              type="button"
+              onClick={() => setInputMode('NUMPAD')}
+              className={`flex items-center gap-1 px-2.5 py-1 rounded text-xs font-bold transition ${
+                inputMode === 'NUMPAD'
+                  ? 'bg-amber-500 text-slate-950 shadow-xs'
+                  : 'text-slate-600 hover:text-slate-900'
+              }`}
+            >
+              <LayoutGrid className="w-3.5 h-3.5" />
+              <span>แป้นตัวเลขไซต์งาน</span>
+            </button>
             <button
               type="button"
               onClick={() => setInputMode('WHEEL')}
@@ -459,7 +529,130 @@ export default function BlowCountInput({
       </div>
 
       {/* 3. Fast Input Area based on Mode */}
-      {inputMode === 'WHEEL' ? (
+      {inputMode === 'NUMPAD' ? (
+        /* Fast Field Numpad - Specially designed for site engineers with gloves */
+        <div className="bg-slate-900 text-white p-4 sm:p-5 rounded-2xl shadow-md border border-slate-800 space-y-3">
+          {/* Header row & Live Display */}
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-slate-800">
+            <div>
+              <div className="flex items-center gap-2">
+                <span className="text-[11px] font-bold text-amber-400 uppercase tracking-wider">
+                  ลำดับบันทึกถัดไป
+                </span>
+                <span className="px-2 py-0.5 rounded bg-amber-500/20 text-amber-300 font-mono text-xs font-bold border border-amber-500/30">
+                  {unit === 'FEET' ? 'ฟุตที่' : 'เมตรที่'} {currentDrivenCount + 1}
+                  {scope === 'WINDOW' && ` / ${windowLength}`}
+                </span>
+              </div>
+              <p className="text-[11px] text-slate-400 mt-0.5">
+                ปุ่มใหญ่พิเศษ &ge; 48px สำหรับสวมถุงมือไซต์งานและแสงแดดจ้า
+              </p>
+            </div>
+
+            {/* Big Digital Display */}
+            <div className="flex items-baseline justify-end gap-2 bg-slate-950/80 px-4 py-2 rounded-xl border border-slate-700/80 min-w-[160px]">
+              <span className="text-3xl sm:text-4xl font-black font-mono text-amber-400 tracking-tight">
+                {numpadValue || '0'}
+              </span>
+              <div className="text-right">
+                <span className="text-xs font-bold text-slate-300 block">{blowUnitLabel}</span>
+                <span className="text-[10px] font-mono text-slate-500">
+                  {getConvertedText(parseInt(numpadValue) || 0)}
+                </span>
+              </div>
+            </div>
+          </div>
+
+          {/* Quick adjustment presets */}
+          <div className="flex items-center gap-1.5 overflow-x-auto py-1">
+            <span className="text-[11px] text-slate-400 font-medium whitespace-nowrap">ปรับด่วน:</span>
+            {[-5, -1, 1, 5, 10].map((delta) => (
+              <button
+                key={delta}
+                type="button"
+                onClick={() => handleNumpadNudge(delta)}
+                className="px-2.5 py-1.5 rounded-lg text-xs font-bold font-mono bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-200 transition active:scale-95 flex-shrink-0 cursor-pointer"
+              >
+                {delta > 0 ? `+${delta}` : delta}
+              </button>
+            ))}
+            {[15, 20, 25, 30, 40].map((preset) => (
+              <button
+                key={preset}
+                type="button"
+                onClick={() => setNumpadValue(preset.toString())}
+                className={`px-2.5 py-1.5 rounded-lg text-xs font-bold font-mono transition active:scale-95 flex-shrink-0 cursor-pointer ${
+                  numpadValue === preset.toString()
+                    ? 'bg-amber-500 text-slate-950 font-black'
+                    : 'bg-slate-800/80 hover:bg-slate-700 border border-slate-700 text-slate-300'
+                }`}
+              >
+                {preset}
+              </button>
+            ))}
+          </div>
+
+          {/* 3x4 Numpad Keypad */}
+          <div className="grid grid-cols-3 gap-2 sm:gap-2.5 max-w-md mx-auto">
+            {['1', '2', '3', '4', '5', '6', '7', '8', '9'].map((digit) => (
+              <button
+                key={digit}
+                type="button"
+                onClick={() => handleNumpadDigit(digit)}
+                className="h-12 sm:h-13 bg-slate-800 hover:bg-slate-700 active:bg-amber-500 active:text-slate-950 text-white font-mono text-xl font-black rounded-xl border border-slate-700 shadow-xs transition active:scale-95 flex items-center justify-center select-none cursor-pointer"
+              >
+                {digit}
+              </button>
+            ))}
+            <button
+              type="button"
+              onClick={handleNumpadClear}
+              className="h-12 sm:h-13 bg-slate-800/60 hover:bg-rose-950/50 hover:text-rose-300 text-slate-400 font-bold text-sm rounded-xl border border-slate-700/80 transition active:scale-95 flex items-center justify-center select-none cursor-pointer"
+            >
+              C (ล้าง)
+            </button>
+            <button
+              type="button"
+              onClick={() => handleNumpadDigit('0')}
+              className="h-12 sm:h-13 bg-slate-800 hover:bg-slate-700 active:bg-amber-500 active:text-slate-950 text-white font-mono text-xl font-black rounded-xl border border-slate-700 shadow-xs transition active:scale-95 flex items-center justify-center select-none cursor-pointer"
+            >
+              0
+            </button>
+            <button
+              type="button"
+              onClick={handleNumpadBackspace}
+              className="h-12 sm:h-13 bg-slate-800/60 hover:bg-slate-700 text-slate-300 font-bold text-sm rounded-xl border border-slate-700 transition active:scale-95 flex items-center justify-center select-none cursor-pointer"
+              title="ลบตัวเลขตัวหลัง"
+            >
+              <Delete className="w-5 h-5" />
+            </button>
+          </div>
+
+          {/* Primary Submit & Skip Actions */}
+          <div className="grid grid-cols-1 sm:grid-cols-12 gap-2 pt-1 max-w-md mx-auto">
+            <button
+              type="button"
+              onClick={handleNumpadSubmit}
+              disabled={!numpadValue || parseInt(numpadValue) <= 0}
+              className="sm:col-span-8 h-13 bg-amber-500 hover:bg-amber-400 disabled:opacity-50 text-slate-950 font-black px-4 rounded-xl text-sm flex items-center justify-center gap-2 shadow-lg transition active:scale-98 cursor-pointer"
+            >
+              <Plus className="w-5 h-5" />
+              <span>
+                บันทึก {numpadValue || '0'} Blows ({unit === 'FEET' ? 'ฟุตที่' : 'เมตรที่'} {currentDrivenCount + 1})
+              </span>
+            </button>
+
+            <button
+              type="button"
+              onClick={handleSkipInterval}
+              className="sm:col-span-4 h-13 bg-slate-800 hover:bg-slate-700 text-slate-300 font-bold px-3 rounded-xl text-xs flex items-center justify-center gap-1.5 border border-slate-700 transition active:scale-98 cursor-pointer"
+            >
+              <FastForward className="w-4 h-4 text-amber-400" />
+              <span>ข้ามช่วงนี้ (Skip)</span>
+            </button>
+          </div>
+        </div>
+      ) : inputMode === 'WHEEL' ? (
         /* Rolling Wheel Selector Area */
         <div className="bg-slate-50 border border-slate-300/80 p-4 rounded-2xl shadow-2xs">
           <div className="flex flex-col sm:flex-row items-center gap-4">
@@ -1199,6 +1392,18 @@ export default function BlowCountInput({
             </div>
           </div>
         </div>
+      )}
+
+      {/* Confirmation Modal for Clearing Log or Trimming Window */}
+      {confirmAction && (
+        <ConfirmModal
+          isOpen={confirmAction.isOpen}
+          title={confirmAction.title}
+          message={confirmAction.message}
+          isDestructive={confirmAction.isDestructive}
+          onConfirm={confirmAction.onConfirm}
+          onClose={() => setConfirmAction(null)}
+        />
       )}
     </div>
   );

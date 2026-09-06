@@ -3,6 +3,7 @@
 import React, { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { Building2, ChevronDown, Plus, Check, X, Sparkles, Layers, Trash2, AlertTriangle } from 'lucide-react';
+import { useToast } from '@/components/ui/ToastProvider';
 
 interface ProjectItem {
   id: string;
@@ -19,6 +20,7 @@ interface ProjectItem {
 
 export default function ProjectSwitcher() {
   const router = useRouter();
+  const toast = useToast();
   const [projects, setProjects] = useState<ProjectItem[]>([]);
   const [selectedProjectId, setSelectedProjectId] = useState<string>('');
   const [isOpen, setIsOpen] = useState(false);
@@ -81,7 +83,7 @@ export default function ProjectSwitcher() {
   const handleCreateProject = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!newName.trim() || !newCode.trim()) {
-      alert('กรุณากรอกชื่อโครงการ/อาคาร และรหัสโครงการ');
+      toast.warning('กรุณากรอกชื่อโครงการ/อาคาร และรหัสโครงการ');
       return;
     }
 
@@ -104,6 +106,7 @@ export default function ProjectSwitcher() {
         throw new Error(data.error || 'Failed to create project');
       }
 
+      toast.success(`สร้างโครงการ "${newName.trim()}" สำเร็จ`);
       setShowCreateModal(false);
       setNewName('');
       setNewCode('');
@@ -113,7 +116,7 @@ export default function ProjectSwitcher() {
         handleSelectProject(data.project);
       }
     } catch (err: any) {
-      alert(err.message);
+      toast.error(err.message || 'เกิดข้อผิดพลาดในการสร้างโครงการ');
     } finally {
       setIsSubmitting(false);
     }
@@ -132,6 +135,7 @@ export default function ProjectSwitcher() {
         throw new Error(data.error || 'ลบโครงการไม่สำเร็จ');
       }
 
+      toast.success(`ลบโครงการ "${projectToDelete.name}" สำเร็จ`);
       setShowDeleteModal(false);
 
       // If deleted project was the currently selected one, switch to another project
@@ -150,7 +154,7 @@ export default function ProjectSwitcher() {
       await fetchProjects();
       router.refresh();
     } catch (err: any) {
-      alert(err.message);
+      toast.error(err.message || 'เกิดข้อผิดพลาดในการลบโครงการ');
     } finally {
       setIsDeleting(false);
     }
