@@ -319,6 +319,7 @@ export default function PileLoadProfileChart({
               <svg
                 viewBox={`0 0 ${svgWidth} ${chartHeight}`}
                 className="w-full h-auto min-h-[320px] select-none font-sans"
+                onMouseLeave={() => setHoveredIndex(null)}
               >
                 {/* Background Grid */}
                 <rect x={marginLeft} y={marginTop} width={plotWidth} height={plotHeight} fill="#fafafa" rx={4} />
@@ -400,6 +401,24 @@ export default function PileLoadProfileChart({
                   })
                 )}
 
+                {/* Full-width interactive horizontal hover bands for every elevation level */}
+                {points.map((pt, idx) => {
+                  const y = getYFromIndex(idx);
+                  const bandH = Math.max(14, plotHeight / Math.max(1, totalIntervals));
+                  return (
+                    <rect
+                      key={`hover-band-blow-${idx}`}
+                      x={marginLeft}
+                      y={y - bandH / 2}
+                      width={plotWidth}
+                      height={bandH}
+                      fill="transparent"
+                      className="cursor-crosshair"
+                      onMouseEnter={() => setHoveredIndex(pt.intervalIndex)}
+                    />
+                  );
+                })}
+
                 {/* Polyline for Blows */}
                 {validBlowPoints.length > 1 && (
                   <polyline
@@ -430,8 +449,8 @@ export default function PileLoadProfileChart({
                   );
                 })}
 
-                {/* Hover indicator crosshair */}
-                {hoveredIndex !== null && (
+                {/* Hover indicator crosshair and inline callout badge */}
+                {hoveredIndex !== null && hoveredPoint && (
                   <g pointerEvents="none">
                     <line
                       x1={marginLeft}
@@ -442,7 +461,7 @@ export default function PileLoadProfileChart({
                       strokeWidth={1.5}
                       strokeDasharray="4 2"
                     />
-                    {hoveredPoint && hoveredPoint.elevationM !== null && (
+                    {hoveredPoint.elevationM !== null && (
                       <text
                         x={marginLeft - 8}
                         y={getYFromIndex(hoveredIndex) + 3}
@@ -455,6 +474,64 @@ export default function PileLoadProfileChart({
                         {formatElevation(hoveredPoint.elevationM)}
                       </text>
                     )}
+
+                    {/* Inline Blow & Ru Badge */}
+                    {hoveredPoint.recordedBlows !== null ? (() => {
+                      const blowX = getBlowX(hoveredPoint.recordedBlows);
+                      const y = getYFromIndex(hoveredIndex);
+                      const hasRu = hoveredPoint.estimatedUltimateLoadT !== null;
+                      const textContent = hasRu
+                        ? `${hoveredPoint.recordedBlows} ${blowUnitLabel} · Ru: ${hoveredPoint.estimatedUltimateLoadT}t`
+                        : `${hoveredPoint.recordedBlows} ${blowUnitLabel}`;
+                      const pillW = hasRu ? 142 : 78;
+                      const pillH = 22;
+                      const isNearRight = blowX + pillW + 12 > marginLeft + plotWidth;
+                      const pillX = isNearRight ? blowX - pillW - 8 : blowX + 8;
+                      const pillY = Math.max(marginTop + 2, Math.min(marginTop + plotHeight - pillH - 2, y - pillH / 2));
+
+                      return (
+                        <g>
+                          <circle
+                            cx={blowX}
+                            cy={y}
+                            r={10}
+                            fill="#f59e0b"
+                            fillOpacity={0.25}
+                            stroke="#d97706"
+                            strokeWidth={1.5}
+                          />
+                          <circle
+                            cx={blowX}
+                            cy={y}
+                            r={5.5}
+                            fill="#78350f"
+                            stroke="#ffffff"
+                            strokeWidth={2}
+                          />
+                          <rect
+                            x={pillX}
+                            y={pillY}
+                            width={pillW}
+                            height={pillH}
+                            rx={6}
+                            fill="#451a03"
+                            stroke="#f59e0b"
+                            strokeWidth={1.5}
+                          />
+                          <text
+                            x={pillX + pillW / 2}
+                            y={pillY + 14.5}
+                            fill="#fef3c7"
+                            fontSize={9.5}
+                            fontWeight="bold"
+                            textAnchor="middle"
+                            fontFamily="monospace"
+                          >
+                            {textContent}
+                          </text>
+                        </g>
+                      );
+                    })() : null}
                   </g>
                 )}
               </svg>
@@ -520,6 +597,7 @@ export default function PileLoadProfileChart({
                   <svg
                     viewBox={`0 0 ${svgWidth} ${chartHeight}`}
                     className="w-full h-auto min-h-[320px] select-none font-sans"
+                    onMouseLeave={() => setHoveredIndex(null)}
                   >
                     {/* Background Grid */}
                     <rect x={marginLeft} y={marginTop} width={plotWidth} height={plotHeight} fill="#fafafa" rx={4} />
@@ -633,6 +711,24 @@ export default function PileLoadProfileChart({
                       })
                     )}
 
+                    {/* Full-width interactive horizontal hover bands for every elevation level */}
+                    {points.map((pt, idx) => {
+                      const y = getYFromIndex(idx);
+                      const bandH = Math.max(14, plotHeight / Math.max(1, totalIntervals));
+                      return (
+                        <rect
+                          key={`hover-band-load-${idx}`}
+                          x={marginLeft}
+                          y={y - bandH / 2}
+                          width={plotWidth}
+                          height={bandH}
+                          fill="transparent"
+                          className="cursor-crosshair"
+                          onMouseEnter={() => setHoveredIndex(pt.intervalIndex)}
+                        />
+                      );
+                    })}
+
                     {/* Polyline for Load */}
                     {validLoadPoints.length > 1 && (
                       <polyline
@@ -663,8 +759,8 @@ export default function PileLoadProfileChart({
                       );
                     })}
 
-                    {/* Hover indicator crosshair */}
-                    {hoveredIndex !== null && (
+                    {/* Hover indicator crosshair and inline Ru callout */}
+                    {hoveredIndex !== null && hoveredPoint && (
                       <g pointerEvents="none">
                         <line
                           x1={marginLeft}
@@ -675,7 +771,7 @@ export default function PileLoadProfileChart({
                           strokeWidth={1.5}
                           strokeDasharray="4 2"
                         />
-                        {hoveredPoint && hoveredPoint.elevationM !== null && (
+                        {hoveredPoint.elevationM !== null && (
                           <text
                             x={marginLeft - 8}
                             y={getYFromIndex(hoveredIndex) + 3}
@@ -688,6 +784,90 @@ export default function PileLoadProfileChart({
                             {formatElevation(hoveredPoint.elevationM)}
                           </text>
                         )}
+
+                        {/* Inline Ru Badge directly on the chart */}
+                        {hoveredPoint.estimatedUltimateLoadT !== null ? (() => {
+                          const loadX = getLoadX(hoveredPoint.estimatedUltimateLoadT);
+                          const y = getYFromIndex(hoveredIndex);
+                          const pillW = 88;
+                          const pillH = 22;
+                          const isNearRight = loadX + pillW + 12 > marginLeft + plotWidth;
+                          const pillX = isNearRight ? loadX - pillW - 8 : loadX + 8;
+                          const pillY = Math.max(marginTop + 2, Math.min(marginTop + plotHeight - pillH - 2, y - pillH / 2));
+
+                          return (
+                            <g>
+                              {/* Highlight target node */}
+                              <circle
+                                cx={loadX}
+                                cy={y}
+                                r={10}
+                                fill="#818cf8"
+                                fillOpacity={0.25}
+                                stroke="#6366f1"
+                                strokeWidth={1.5}
+                              />
+                              <circle
+                                cx={loadX}
+                                cy={y}
+                                r={5.5}
+                                fill="#312e81"
+                                stroke="#ffffff"
+                                strokeWidth={2}
+                              />
+
+                              {/* Floating Ru Callout Pill */}
+                              <rect
+                                x={pillX}
+                                y={pillY}
+                                width={pillW}
+                                height={pillH}
+                                rx={6}
+                                fill="#1e1b4b"
+                                stroke="#818cf8"
+                                strokeWidth={1.5}
+                              />
+                              <text
+                                x={pillX + pillW / 2}
+                                y={pillY + 14.5}
+                                fill="#ffffff"
+                                fontSize={10}
+                                fontWeight="bold"
+                                textAnchor="middle"
+                                fontFamily="monospace"
+                              >
+                                Ru: {hoveredPoint.estimatedUltimateLoadT} t
+                              </text>
+                            </g>
+                          );
+                        })() : (() => {
+                          const y = getYFromIndex(hoveredIndex);
+                          return (
+                            <g>
+                              <rect
+                                x={marginLeft + plotWidth / 2 - 38}
+                                y={y - 10}
+                                width={76}
+                                height={20}
+                                rx={4}
+                                fill="#f1f5f9"
+                                stroke="#cbd5e1"
+                                strokeWidth={1}
+                              />
+                              <text
+                                x={marginLeft + plotWidth / 2}
+                                y={y + 3.5}
+                                fill="#94a3b8"
+                                fontSize={9}
+                                fontWeight="bold"
+                                textAnchor="middle"
+                                fontFamily="monospace"
+                              >
+                                ไม่มีค่า Ru
+                              </text>
+                            </g>
+                          );
+                        })()}
                       </g>
                     )}
                   </svg>
