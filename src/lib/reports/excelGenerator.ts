@@ -10,6 +10,7 @@ export interface PileReportRow {
   drivenLengthM?: number | null;
   avgBlowsPerMeter?: number | null;
   avgBlowsPerFoot?: number | null;
+  recordUnit?: 'FEET' | 'METER';
   measuredLast10Cm?: number | null;
   isSetPassed?: boolean | null;
   deltaXCm?: number | null;

@@ -55,7 +55,9 @@ export function exportDailyLogPDF(
     `${r.safeWorkingLoadT} T`,
     `${r.targetSet10BlowsCm} cm`,
     r.drivenLengthM ? `${r.drivenLengthM}m (${(r.drivenLengthM * 3.281).toFixed(0)}ft)` : '-',
-    r.avgBlowsPerFoot ? `${r.avgBlowsPerFoot} blw/ft (${r.avgBlowsPerMeter} blw/m)` : '-',
+    r.recordUnit === 'METER'
+      ? (r.avgBlowsPerMeter ? `${r.avgBlowsPerMeter} blw/m` : '-')
+      : (r.avgBlowsPerFoot ? `${r.avgBlowsPerFoot} blw/ft` : '-'),
     r.measuredLast10Cm ? `${r.measuredLast10Cm} cm` : '-',
     r.isSetPassed === true ? 'PASS' : r.isSetPassed === false ? 'RE-DRIVE' : 'PENDING',
     r.netDeviationCm !== undefined && r.netDeviationCm !== null ? `${r.netDeviationCm} cm` : '-',
@@ -73,7 +75,7 @@ export function exportDailyLogPDF(
       'Ra (SWL)',
       'Target S10',
       'Depth',
-      'Rate (ft/m)',
+      'Avg Rate',
       'Meas. S10',
       'Set Status',
       'Dev. Net',

@@ -20,7 +20,7 @@ export default async function ReportsPage() {
   });
 
   const rows: PileReportRow[] = (project?.piles || []).map((p) => {
-    const { avgBlowsFt, avgBlowsM } = calculateAverageBlows(
+    const { avgBlowsFt, avgBlowsM, primaryUnit } = calculateAverageBlows(
       p.drivingRecord?.penetrationBlows,
       p.drivingRecord?.recordUnit
     );
@@ -35,6 +35,7 @@ export default async function ReportsPage() {
       drivenLengthM: p.drivingRecord?.drivenLengthM,
       avgBlowsPerMeter: avgBlowsM,
       avgBlowsPerFoot: avgBlowsFt,
+      recordUnit: primaryUnit,
       measuredLast10Cm: p.drivingRecord?.measuredLast10Cm,
       isSetPassed: p.drivingRecord?.isSetPassed,
       deltaXCm: p.qcInspection?.deltaXCm,
