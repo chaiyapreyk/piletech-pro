@@ -73,7 +73,7 @@ model DrivingRecord {
   pileId            String   @unique
   pile              Pile     @relation(fields: [pileId], references: [id], onDelete: Cascade)
   penetrationBlows  String   // JSON string of blow counts e.g. "[15, 20, 25]"
-  recordUnit        String   @default("M") // "M" or "FT"
+  recordUnit        String   @default("FEET") // "METER" or "FEET"
   recordScope       String   @default("FULL") // "FULL" or "LAST_N"
   windowLengthFt    Float?   // e.g. 20 (for last 20 ft)
   measuredLast10Cm  Float    // Measured set for last 10 blows in cm

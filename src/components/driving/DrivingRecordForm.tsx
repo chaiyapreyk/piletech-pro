@@ -59,9 +59,15 @@ export default function DrivingRecordForm({ pile }: { pile: PileData }) {
     : [];
 
   const [blowCounts, setBlowCounts] = useState<(number | null)[]>(initialBlows);
-  const [recordUnit, setRecordUnit] = useState<'METER' | 'FEET'>(
-    (pile.drivingRecord?.recordUnit as 'METER' | 'FEET') || 'FEET'
-  );
+  // Normalize DB unit: default to FEET unless explicitly saved as METER
+  const getInitialRecordUnit = (): 'METER' | 'FEET' => {
+    const raw = pile.drivingRecord?.recordUnit?.toUpperCase()?.trim();
+    if (raw === 'METER') return 'METER';
+    if (raw === 'FEET' || raw === 'FT') return 'FEET';
+    return 'FEET';
+  };
+
+  const [recordUnit, setRecordUnit] = useState<'METER' | 'FEET'>(getInitialRecordUnit);
   const [recordScope, setRecordScope] = useState<'FULL' | 'WINDOW'>(
     (pile.drivingRecord?.recordScope as 'FULL' | 'WINDOW') || 'WINDOW'
   );

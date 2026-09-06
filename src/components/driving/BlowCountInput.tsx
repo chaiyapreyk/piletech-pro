@@ -50,7 +50,15 @@ export default function BlowCountInput({
   const [internalScope, setInternalScope] = useState<'FULL' | 'WINDOW'>('WINDOW');
   const [internalWindowLength, setInternalWindowLength] = useState<number>(20);
 
-  const unit = externalUnit ?? internalUnit;
+  const normalizeUnit = (u?: string | null): 'METER' | 'FEET' => {
+    if (!u) return 'FEET';
+    const upper = u.toUpperCase().trim();
+    if (upper === 'METER') return 'METER';
+    if (upper === 'FEET' || upper === 'FT') return 'FEET';
+    return 'FEET';
+  };
+
+  const unit: 'METER' | 'FEET' = normalizeUnit(externalUnit ?? internalUnit);
   const setUnit = onUnitChange ?? setInternalUnit;
 
   const scope = externalScope ?? internalScope;
@@ -727,8 +735,8 @@ export default function BlowCountInput({
               <thead className="bg-slate-100/90 text-slate-700 font-bold sticky top-0 z-10 backdrop-blur-xs border-b border-slate-200">
                 <tr>
                   <th className="p-2.5 w-12 text-center">#</th>
-                  <th className="p-2.5 w-24">ระยะ {unitShort}</th>
-                  <th className="p-2.5 w-40">Blow Count</th>
+                  <th className="p-2.5 w-32">ระยะ {unit === 'FEET' ? 'ฟุต (ft)' : 'เมตร (m)'}</th>
+                  <th className="p-2.5 w-56">จำนวนการตอก ({unit === 'FEET' ? 'Blows/ft' : 'Blows/m'})</th>
                   <th className="p-2.5">สถานะ (Status)</th>
                   <th className="p-2.5 text-right w-44">การทำงาน / ปรับแก้</th>
                 </tr>
@@ -778,7 +786,7 @@ export default function BlowCountInput({
                           </span>
                         </div>
                         <div className="text-[10px] text-slate-400 font-normal font-mono">
-                          {getAltDepthText(step)}
+                          (เทียบเคียง {getAltDepthText(step)})
                         </div>
                       </td>
 
@@ -802,6 +810,9 @@ export default function BlowCountInput({
                               className="font-black font-mono text-sm text-slate-900 cursor-pointer hover:bg-amber-100 hover:text-amber-800 px-2 py-0.5 rounded-md transition flex items-center gap-1 group border border-transparent hover:border-amber-300"
                             >
                               <span>{val}</span>
+                              <span className="text-[10px] font-bold text-amber-800">
+                                {unit === 'FEET' ? 'blw/ft' : 'blw/m'}
+                              </span>
                               <Edit3 className="w-3 h-3 text-slate-400 group-hover:text-amber-600 opacity-0 group-hover:opacity-100 transition" />
                             </button>
 
@@ -815,7 +826,7 @@ export default function BlowCountInput({
                             </button>
 
                             <span className="text-[10px] text-slate-400 font-mono ml-1">
-                              {getConvertedText(val)}
+                              (เทียบเท่า {getConvertedText(val)})
                             </span>
                           </div>
                         ) : isSkipped ? (
@@ -1008,22 +1019,23 @@ export default function BlowCountInput({
                           type="button"
                           onClick={() => handleOpenEditModal(idx)}
                           title="แตะเพื่อหมุนเลือกตัวเลข (Small Rolling)"
-                          className="w-11 text-center font-black text-xs text-slate-800 hover:text-amber-700 hover:bg-amber-100/80 rounded py-0.5 transition font-mono"
+                          className="px-1.5 py-0.5 text-center font-black text-xs text-slate-800 hover:text-amber-700 hover:bg-amber-100/80 rounded transition font-mono flex items-center justify-center gap-0.5"
                         >
-                          {val}
+                          <span>{val}</span>
+                          <span className="text-[9px] font-bold text-amber-800">{unit === 'FEET' ? 'blw/ft' : 'blw/m'}</span>
                         </button>
 
                         <button
                           type="button"
                           onClick={(e) => handleStepValue(idx, 1, e)}
                           title="เพิ่ม 1 blow"
-                          className="w-5 h-5 rounded bg-slate-100 hover:bg-slate-200 text-slate-600 text-xs font-black flex items-center justify-center transition active:scale-95"
+                          className="w-5 h-5 rounded bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold flex items-center justify-center transition active:scale-95"
                         >
                           <Plus className="w-2.5 h-2.5" />
                         </button>
                       </div>
                       <div className="text-[9px] text-slate-400 font-mono mt-0.5">
-                        {getConvertedText(val)}
+                        (เทียบเท่า {getConvertedText(val)})
                       </div>
                     </>
                   ) : isSkipped ? (
@@ -1110,7 +1122,7 @@ export default function BlowCountInput({
                 {editTarget.value} <span className="text-xs font-normal">{blowUnitLabel}</span>
               </div>
               <div className="text-[10px] font-mono font-bold text-slate-500">
-                {getConvertedText(editTarget.value)}
+                (เทียบเท่า {getConvertedText(editTarget.value)})
               </div>
             </div>
 
