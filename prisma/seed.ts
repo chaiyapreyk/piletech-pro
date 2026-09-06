@@ -187,16 +187,19 @@ async function main() {
 
     if (p.status !== 'PLANNED') {
       const isSetPassed = p.measured10 <= (p.criteriaId === criteria1.id ? c1Calc.targetSet10BlowsCm : c2Calc.targetSet10BlowsCm);
+      const computedTip = Number((3.00 - p.drivenLength).toFixed(2));
       await prisma.drivingRecord.create({
         data: {
           pileId: pile.id,
           penetrationBlows: JSON.stringify(p.blows),
+          recordUnit: 'METER',
+          recordScope: 'FULL',
           measuredLast10Cm: p.measured10,
           measuredTempCCm: 1.2,
           drivenLengthM: p.drivenLength,
           cutOffLevelM: +2.50,
           groundLevelM: +3.00,
-          tipLevelM: -18.00,
+          tipLevelM: computedTip,
           isSetPassed,
           inspectorName: 'Somchai Eng.',
           notes: isSetPassed ? 'Set achieved successfully.' : 'High penetration rate, requires re-drive test.',

@@ -8,6 +8,7 @@ export interface LoadProfileIntervalPoint {
   depthDisplay: number; // e.g. 1, 2, 3 (ft or m)
   depthDisplayUnit: 'ft' | 'm';
   cumulativePenetrationM: number; // in meters at end of interval
+  actualDepthM?: number; // actual depth from ground level in meters
   elevationM: number | null; // GL - cumulativePenetrationM (if GL available)
   recordedBlows: number | null; // null if skipped, invalid, or 0
   setCmPerBlow: number | null; // cm per blow
@@ -60,6 +61,8 @@ export interface DrivingCriteriaInput {
 export interface DrivingRecordInput {
   penetrationBlows?: string | null; // JSON array string
   recordUnit?: string | null; // "FEET" | "METER"
+  recordScope?: string | null; // "FULL" | "WINDOW" | "LAST_N"
+  windowLengthFt?: number | null;
   measuredTempCCm?: number | null;
   drivenLengthM?: number | null;
   groundLevelM?: number | null;
@@ -69,6 +72,8 @@ export interface DrivingRecordInput {
 
 export interface DrivingLoadProfileResult {
   recordUnit: 'FEET' | 'METER';
+  recordScope: 'FULL' | 'WINDOW';
+  isWindowScope: boolean;
   points: LoadProfileIntervalPoint[];
   fsLines: FsReferenceLine[];
   elevations: ElevationMarkers;
@@ -116,6 +121,18 @@ export function parsePenetrationBlows(rawBlows?: string | null): (number | null)
 export function calculatePenetrationSet(blows: number, recordUnit: 'FEET' | 'METER'): number {
   if (!blows || blows <= 0 || !isFinite(blows)) return 0;
   return recordUnit === 'FEET' ? 30.48 / blows : 100 / blows;
+}
+
+/**
+ * Formats an elevation value in meters with appropriate +/- sign (e.g. "+3.00 m", "-18.00 m", "0.00 m").
+ * Avoids broken display like "+-18.00 m".
+ */
+export function formatElevation(elev: number | null | undefined): string {
+  if (elev === null || elev === undefined || isNaN(Number(elev))) return '-';
+  const num = Number(elev);
+  if (num > 0) return `+${num.toFixed(2)} m`;
+  if (num < 0) return `${num.toFixed(2)} m`;
+  return `0.00 m`;
 }
 
 /**
@@ -263,13 +280,62 @@ export function calculateDrivingLoadProfile(
   let maxLoadT = 0;
   let hasValidLoadPoints = false;
 
+  const rawScope = record?.recordScope?.toUpperCase()?.trim();
+  const isExplicitWindow = rawScope === 'WINDOW' || rawScope === 'LAST_N';
+  const isExplicitFull = rawScope === 'FULL';
+
+  const drivenLengthM =
+    record?.drivenLengthM !== undefined &&
+    record?.drivenLengthM !== null &&
+    Number(record.drivenLengthM) > 0
+      ? Number(record.drivenLengthM)
+      : null;
+
+  const totalRawCount = rawBlows.length;
   const intervalFactorM = recordUnit === 'FEET' ? 0.3048 : 1.0;
+  const totalRecordedSpanM = totalRawCount * intervalFactorM;
+
+  // Auto-detect WINDOW scope if not explicitly FULL:
+  // When recordScope is explicitly WINDOW/LAST_N, or when total blows recorded only span <= 75% of driven length
+  const isWindowScope =
+    isExplicitWindow ||
+    (!isExplicitFull &&
+      drivenLengthM !== null &&
+      totalRecordedSpanM > 0 &&
+      totalRecordedSpanM <= drivenLengthM * 0.75);
+
+  const resolvedScope: 'FULL' | 'WINDOW' = isWindowScope ? 'WINDOW' : 'FULL';
 
   rawBlows.forEach((blows, idx) => {
     const intervalIndex = idx;
     const depthDisplay = idx + 1;
-    const cumulativePenetrationM = Number(((idx + 1) * intervalFactorM).toFixed(4));
-    const elevationM = gl !== null ? Number((gl - cumulativePenetrationM).toFixed(3)) : null;
+
+    let cumulativePenetrationM: number;
+    let elevationM: number | null = null;
+    let actualDepthM: number | undefined = undefined;
+
+    if (isWindowScope && drivenLengthM !== null) {
+      // In WINDOW mode, the final recorded interval (idx = totalRawCount - 1) reaches drivenLengthM (effectiveTip).
+      // Each preceding interval is intervalFactorM higher.
+      const remainingIntervalsToTip = totalRawCount - 1 - idx;
+      cumulativePenetrationM = Number(
+        (drivenLengthM - remainingIntervalsToTip * intervalFactorM).toFixed(4)
+      );
+      actualDepthM = cumulativePenetrationM;
+
+      if (effectiveTip !== null) {
+        elevationM = Number(
+          (effectiveTip + remainingIntervalsToTip * intervalFactorM).toFixed(3)
+        );
+      } else if (gl !== null) {
+        elevationM = Number((gl - cumulativePenetrationM).toFixed(3));
+      }
+    } else {
+      // FULL mode (starts from ground surface downwards)
+      cumulativePenetrationM = Number(((idx + 1) * intervalFactorM).toFixed(4));
+      actualDepthM = cumulativePenetrationM;
+      elevationM = gl !== null ? Number((gl - cumulativePenetrationM).toFixed(3)) : null;
+    }
 
     let setCmPerBlow: number | null = null;
     let estimatedUltimateLoadT: number | null = null;
@@ -303,6 +369,7 @@ export function calculateDrivingLoadProfile(
       depthDisplay,
       depthDisplayUnit: recordUnit === 'FEET' ? 'ft' : 'm',
       cumulativePenetrationM,
+      actualDepthM,
       elevationM,
       recordedBlows: blows,
       setCmPerBlow: setCmPerBlow !== null ? Number(setCmPerBlow.toFixed(4)) : null,
@@ -347,6 +414,8 @@ export function calculateDrivingLoadProfile(
 
   return {
     recordUnit,
+    recordScope: resolvedScope,
+    isWindowScope,
     points,
     fsLines,
     elevations,

@@ -23,7 +23,7 @@ import {
 } from 'lucide-react';
 import type { PileData } from './matrix/matrixTypes';
 import PileLoadProfileChart from '../driving/PileLoadProfileChart';
-import { calculateDrivingLoadProfile } from '@/lib/calculations/drivingLoadProfile';
+import { calculateDrivingLoadProfile, formatElevation } from '@/lib/calculations/drivingLoadProfile';
 import { exportIndividualPilePDF } from '@/lib/reports/pdfGenerator';
 import { useToast } from '@/components/ui/ToastProvider';
 
@@ -248,17 +248,13 @@ export default function PileDetailModal({
               <div className="bg-slate-800/80 p-2.5 rounded-lg border border-slate-700">
                 <span className="text-slate-400 text-[10px] block">Ground Level (GL)</span>
                 <span className="font-bold text-white text-sm">
-                  {profileData.elevations.groundLevelM !== null
-                    ? `+${profileData.elevations.groundLevelM.toFixed(2)} m`
-                    : 'ไม่ได้บันทึก'}
+                  {formatElevation(profileData.elevations.groundLevelM)}
                 </span>
               </div>
               <div className="bg-slate-800/80 p-2.5 rounded-lg border border-slate-700">
                 <span className="text-slate-400 text-[10px] block">Cut-Off Level (COL)</span>
                 <span className="font-bold text-blue-300 text-sm">
-                  {profileData.elevations.cutOffLevelM !== null
-                    ? `+${profileData.elevations.cutOffLevelM.toFixed(2)} m`
-                    : 'ไม่ได้บันทึก'}
+                  {formatElevation(profileData.elevations.cutOffLevelM)}
                 </span>
               </div>
               <div className="bg-slate-800/80 p-2.5 rounded-lg border border-slate-700">
@@ -266,9 +262,7 @@ export default function PileDetailModal({
                   {profileData.elevations.isTipDerived ? 'Tip Level (Calculated)' : 'Tip Level (Stored)'}
                 </span>
                 <span className="font-bold text-rose-300 text-sm">
-                  {profileData.elevations.effectiveTipLevelM !== null
-                    ? `+${profileData.elevations.effectiveTipLevelM.toFixed(2)} m`
-                    : 'ไม่ได้บันทึก'}
+                  {formatElevation(profileData.elevations.effectiveTipLevelM)}
                 </span>
               </div>
               <div className="bg-slate-800/80 p-2.5 rounded-lg border border-slate-700">

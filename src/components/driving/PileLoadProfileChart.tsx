@@ -14,6 +14,7 @@ import {
 } from 'lucide-react';
 import {
   calculateDrivingLoadProfile,
+  formatElevation,
   type DrivingLoadProfileResult,
   type DrivingRecordInput,
   type DrivingCriteriaInput,
@@ -131,6 +132,20 @@ export default function PileLoadProfileChart({
       p,
     }));
 
+  // Generate clean, regular elevation ticks across the vertical axis
+  const elevationTicks = useMemo(() => {
+    if (!hasElevation) return [];
+    const span = Math.max(1, maxElevationM! - minElevationM!);
+    const step = span <= 6 ? 1 : span <= 14 ? 2 : span <= 25 ? 3 : 5;
+    const start = Math.ceil(minElevationM! / step) * step;
+    const end = Math.floor(maxElevationM! / step) * step;
+    const ticks: number[] = [];
+    for (let t = start; t <= end; t += step) {
+      ticks.push(t);
+    }
+    return ticks;
+  }, [hasElevation, maxElevationM, minElevationM]);
+
   // Render Horizontal Reference Markers (GL, Cut-off, Tip)
   const renderElevationHorizontalLines = () => {
     if (!hasElevation) return null;
@@ -181,7 +196,7 @@ export default function PileLoadProfileChart({
             fontWeight="bold"
             textAnchor="end"
           >
-            {m.label}: {m.val.toFixed(2)}m
+            {m.label}: {formatElevation(m.val)}
           </text>
         </g>
       );
@@ -231,19 +246,19 @@ export default function PileLoadProfileChart({
             {elevations.groundLevelM !== null && (
               <span className="inline-flex items-center gap-1 text-amber-400 font-mono">
                 <span className="w-2.5 h-0.5 bg-amber-500 inline-block"></span>
-                GL: {elevations.groundLevelM.toFixed(2)}m
+                GL: {formatElevation(elevations.groundLevelM)}
               </span>
             )}
             {elevations.cutOffLevelM !== null && (
               <span className="inline-flex items-center gap-1 text-blue-400 font-mono">
                 <span className="w-2.5 h-0.5 bg-blue-500 inline-block"></span>
-                COL: {elevations.cutOffLevelM.toFixed(2)}m
+                COL: {formatElevation(elevations.cutOffLevelM)}
               </span>
             )}
             {elevations.effectiveTipLevelM !== null && (
               <span className="inline-flex items-center gap-1 text-rose-400 font-mono">
                 <span className="w-2.5 h-0.5 bg-rose-500 inline-block"></span>
-                {elevations.isTipDerived ? 'TIP (Calc)' : 'TIP (Stored)'}: {elevations.effectiveTipLevelM.toFixed(2)}m
+                {elevations.isTipDerived ? 'TIP (Calc)' : 'TIP (Stored)'}: {formatElevation(elevations.effectiveTipLevelM)}
               </span>
             )}
           </div>
@@ -330,27 +345,60 @@ export default function PileLoadProfileChart({
                 {/* Elevation Horizontal Markers */}
                 {renderElevationHorizontalLines()}
 
-                {/* Horizontal grid lines for intervals */}
-                {points.map((pt, idx) => {
-                  const y = getYFromIndex(idx);
-                  const isHovered = hoveredIndex === idx;
-                  return (
-                    <g key={`row-${idx}`} onMouseEnter={() => setHoveredIndex(idx)} onMouseLeave={() => setHoveredIndex(null)} className="cursor-pointer">
-                      <line
-                        x1={marginLeft}
-                        y1={y}
-                        x2={marginLeft + plotWidth}
-                        y2={y}
-                        stroke={isHovered ? '#f59e0b' : '#edf2f7'}
-                        strokeWidth={isHovered ? 2 : 1}
-                      />
-                      {/* Y-axis tick label (Elevation or Depth) */}
-                      <text x={marginLeft - 8} y={y + 3} fill={isHovered ? '#b45309' : '#64748b'} fontSize={9} fontWeight={isHovered ? 'bold' : 'normal'} textAnchor="end" fontFamily="monospace">
-                        {hasElevation && pt.elevationM !== null ? `${pt.elevationM.toFixed(1)}m` : `${pt.depthDisplay}${depthUnitLabel}`}
-                      </text>
-                    </g>
-                  );
-                })}
+                {/* Regular Elevation Grid Lines & Y-Axis Scale */}
+                {hasElevation ? (
+                  elevationTicks.map((elevTick) => {
+                    const y = getYFromElevation(elevTick);
+                    const formatted = `${elevTick > 0 ? '+' : ''}${elevTick}m`;
+                    return (
+                      <g key={`blow-elev-grid-${elevTick}`}>
+                        <line
+                          x1={marginLeft}
+                          y1={y}
+                          x2={marginLeft + plotWidth}
+                          y2={y}
+                          stroke="#edf2f7"
+                          strokeDasharray="2 2"
+                        />
+                        <text
+                          x={marginLeft - 8}
+                          y={y + 3}
+                          fill="#64748b"
+                          fontSize={9}
+                          textAnchor="end"
+                          fontFamily="monospace"
+                        >
+                          {formatted}
+                        </text>
+                      </g>
+                    );
+                  })
+                ) : (
+                  points.map((pt, idx) => {
+                    const y = getYFromIndex(idx);
+                    return (
+                      <g key={`row-${idx}`}>
+                        <line
+                          x1={marginLeft}
+                          y1={y}
+                          x2={marginLeft + plotWidth}
+                          y2={y}
+                          stroke="#edf2f7"
+                        />
+                        <text
+                          x={marginLeft - 8}
+                          y={y + 3}
+                          fill="#64748b"
+                          fontSize={9}
+                          textAnchor="end"
+                          fontFamily="monospace"
+                        >
+                          {`${pt.depthDisplay}${depthUnitLabel}`}
+                        </text>
+                      </g>
+                    );
+                  })
+                )}
 
                 {/* Polyline for Blows */}
                 {validBlowPoints.length > 1 && (
@@ -384,16 +432,30 @@ export default function PileLoadProfileChart({
 
                 {/* Hover indicator crosshair */}
                 {hoveredIndex !== null && (
-                  <line
-                    x1={marginLeft}
-                    y1={getYFromIndex(hoveredIndex)}
-                    x2={marginLeft + plotWidth}
-                    y2={getYFromIndex(hoveredIndex)}
-                    stroke="#f59e0b"
-                    strokeWidth={1.5}
-                    strokeDasharray="4 2"
-                    pointerEvents="none"
-                  />
+                  <g pointerEvents="none">
+                    <line
+                      x1={marginLeft}
+                      y1={getYFromIndex(hoveredIndex)}
+                      x2={marginLeft + plotWidth}
+                      y2={getYFromIndex(hoveredIndex)}
+                      stroke="#f59e0b"
+                      strokeWidth={1.5}
+                      strokeDasharray="4 2"
+                    />
+                    {hoveredPoint && hoveredPoint.elevationM !== null && (
+                      <text
+                        x={marginLeft - 8}
+                        y={getYFromIndex(hoveredIndex) + 3}
+                        fill="#b45309"
+                        fontSize={9}
+                        fontWeight="bold"
+                        textAnchor="end"
+                        fontFamily="monospace"
+                      >
+                        {formatElevation(hoveredPoint.elevationM)}
+                      </text>
+                    )}
+                  </g>
                 )}
               </svg>
             </div>
@@ -516,26 +578,60 @@ export default function PileLoadProfileChart({
                     {/* Elevation Horizontal Markers */}
                     {renderElevationHorizontalLines()}
 
-                    {/* Horizontal lines for intervals */}
-                    {points.map((pt, idx) => {
-                      const y = getYFromIndex(idx);
-                      const isHovered = hoveredIndex === idx;
-                      return (
-                        <g key={`load-row-${idx}`} onMouseEnter={() => setHoveredIndex(idx)} onMouseLeave={() => setHoveredIndex(null)} className="cursor-pointer">
-                          <line
-                            x1={marginLeft}
-                            y1={y}
-                            x2={marginLeft + plotWidth}
-                            y2={y}
-                            stroke={isHovered ? '#6366f1' : '#edf2f7'}
-                            strokeWidth={isHovered ? 2 : 1}
-                          />
-                          <text x={marginLeft - 8} y={y + 3} fill={isHovered ? '#4338ca' : '#64748b'} fontSize={9} fontWeight={isHovered ? 'bold' : 'normal'} textAnchor="end" fontFamily="monospace">
-                            {hasElevation && pt.elevationM !== null ? `${pt.elevationM.toFixed(1)}m` : `${pt.depthDisplay}${depthUnitLabel}`}
-                          </text>
-                        </g>
-                      );
-                    })}
+                    {/* Regular Elevation Grid Lines & Y-Axis Scale */}
+                    {hasElevation ? (
+                      elevationTicks.map((elevTick) => {
+                        const y = getYFromElevation(elevTick);
+                        const formatted = `${elevTick > 0 ? '+' : ''}${elevTick}m`;
+                        return (
+                          <g key={`load-elev-grid-${elevTick}`}>
+                            <line
+                              x1={marginLeft}
+                              y1={y}
+                              x2={marginLeft + plotWidth}
+                              y2={y}
+                              stroke="#edf2f7"
+                              strokeDasharray="2 2"
+                            />
+                            <text
+                              x={marginLeft - 8}
+                              y={y + 3}
+                              fill="#64748b"
+                              fontSize={9}
+                              textAnchor="end"
+                              fontFamily="monospace"
+                            >
+                              {formatted}
+                            </text>
+                          </g>
+                        );
+                      })
+                    ) : (
+                      points.map((pt, idx) => {
+                        const y = getYFromIndex(idx);
+                        return (
+                          <g key={`load-row-${idx}`}>
+                            <line
+                              x1={marginLeft}
+                              y1={y}
+                              x2={marginLeft + plotWidth}
+                              y2={y}
+                              stroke="#edf2f7"
+                            />
+                            <text
+                              x={marginLeft - 8}
+                              y={y + 3}
+                              fill="#64748b"
+                              fontSize={9}
+                              textAnchor="end"
+                              fontFamily="monospace"
+                            >
+                              {`${pt.depthDisplay}${depthUnitLabel}`}
+                            </text>
+                          </g>
+                        );
+                      })
+                    )}
 
                     {/* Polyline for Load */}
                     {validLoadPoints.length > 1 && (
@@ -569,16 +665,30 @@ export default function PileLoadProfileChart({
 
                     {/* Hover indicator crosshair */}
                     {hoveredIndex !== null && (
-                      <line
-                        x1={marginLeft}
-                        y1={getYFromIndex(hoveredIndex)}
-                        x2={marginLeft + plotWidth}
-                        y2={getYFromIndex(hoveredIndex)}
-                        stroke="#6366f1"
-                        strokeWidth={1.5}
-                        strokeDasharray="4 2"
-                        pointerEvents="none"
-                      />
+                      <g pointerEvents="none">
+                        <line
+                          x1={marginLeft}
+                          y1={getYFromIndex(hoveredIndex)}
+                          x2={marginLeft + plotWidth}
+                          y2={getYFromIndex(hoveredIndex)}
+                          stroke="#6366f1"
+                          strokeWidth={1.5}
+                          strokeDasharray="4 2"
+                        />
+                        {hoveredPoint && hoveredPoint.elevationM !== null && (
+                          <text
+                            x={marginLeft - 8}
+                            y={getYFromIndex(hoveredIndex) + 3}
+                            fill="#4338ca"
+                            fontSize={9}
+                            fontWeight="bold"
+                            textAnchor="end"
+                            fontFamily="monospace"
+                          >
+                            {formatElevation(hoveredPoint.elevationM)}
+                          </text>
+                        )}
+                      </g>
                     )}
                   </svg>
                 </div>
@@ -602,7 +712,12 @@ export default function PileLoadProfileChart({
             </span>
             {hoveredPoint.elevationM !== null && (
               <span className="font-mono text-slate-300">
-                ระดับดิน: <strong>{hoveredPoint.elevationM.toFixed(2)} m MSL</strong>
+                ระดับดิน: <strong>{formatElevation(hoveredPoint.elevationM)} MSL</strong>
+              </span>
+            )}
+            {hoveredPoint.actualDepthM !== undefined && (
+              <span className="font-mono text-slate-400">
+                (ลึก {hoveredPoint.actualDepthM.toFixed(2)} m)
               </span>
             )}
             <span className="font-mono text-amber-300">

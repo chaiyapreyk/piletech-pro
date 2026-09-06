@@ -4,6 +4,7 @@ import {
   calculatePenetrationSet,
   validateDrivingCriteria,
   calculateDrivingLoadProfile,
+  formatElevation,
   type DrivingCriteriaInput,
   type DrivingRecordInput,
 } from '@/lib/calculations/drivingLoadProfile';
@@ -164,10 +165,11 @@ describe('Driving Load Profile Engine (spec 2026-09-06)', () => {
   });
 
   describe('4.4 Elevation and Derived Tip Mapping', () => {
-    it('calculates elevations correctly using groundLevelM and interval cumulative penetration', () => {
+    it('calculates elevations correctly for FULL scope using groundLevelM and cumulative penetration', () => {
       const record: DrivingRecordInput = {
         penetrationBlows: JSON.stringify([20, 25, 30]),
         recordUnit: 'FEET',
+        recordScope: 'FULL',
         groundLevelM: 100.0,
         cutOffLevelM: 101.5,
         tipLevelM: 80.0,
@@ -176,6 +178,8 @@ describe('Driving Load Profile Engine (spec 2026-09-06)', () => {
 
       const result = calculateDrivingLoadProfile(record, standardCriteria);
 
+      expect(result.recordScope).toBe('FULL');
+      expect(result.isWindowScope).toBe(false);
       expect(result.elevations.groundLevelM).toBe(100.0);
       expect(result.elevations.cutOffLevelM).toBe(101.5);
       expect(result.elevations.tipLevelM).toBe(80.0);
@@ -191,10 +195,43 @@ describe('Driving Load Profile Engine (spec 2026-09-06)', () => {
       expect(result.points[1].elevationM).toBeCloseTo(99.39, 2);
     });
 
+    it('aligns WINDOW scope intervals directly with pile tip level at the final recorded interval', () => {
+      // 20 ft recorded window for a 21m driven pile (GL +3.00, Tip -18.00)
+      const blows20ft = Array(20).fill(25);
+      const record: DrivingRecordInput = {
+        penetrationBlows: JSON.stringify(blows20ft),
+        recordUnit: 'FEET',
+        recordScope: 'WINDOW',
+        windowLengthFt: 20,
+        groundLevelM: 3.0,
+        cutOffLevelM: 2.5,
+        tipLevelM: -18.0,
+        drivenLengthM: 21.0,
+      };
+
+      const result = calculateDrivingLoadProfile(record, standardCriteria);
+
+      expect(result.isWindowScope).toBe(true);
+      expect(result.recordScope).toBe('WINDOW');
+      expect(result.points).toHaveLength(20);
+
+      // Last interval (idx 19) must touch the pile tip (-18.00m) at drivenLength 21.0m
+      const lastPoint = result.points[19];
+      expect(lastPoint.cumulativePenetrationM).toBe(21.0);
+      expect(lastPoint.elevationM).toBe(-18.0);
+
+      // First interval of the 20ft window (idx 0) is 19 feet above the tip:
+      // -18.00 + 19 * 0.3048 = -12.2088 m
+      const firstPoint = result.points[0];
+      expect(firstPoint.elevationM).toBeCloseTo(-12.209, 3);
+      expect(firstPoint.cumulativePenetrationM).toBeCloseTo(15.209, 3);
+    });
+
     it('derives tip level when tipLevelM is absent and labels it as derived', () => {
       const record: DrivingRecordInput = {
         penetrationBlows: JSON.stringify([20, 25]),
         recordUnit: 'FEET',
+        recordScope: 'FULL',
         groundLevelM: 50.0,
         tipLevelM: null,
         drivenLengthM: 18.5,
@@ -206,6 +243,15 @@ describe('Driving Load Profile Engine (spec 2026-09-06)', () => {
       expect(result.elevations.isTipDerived).toBe(true);
       expect(result.elevations.derivedTipLevelM).toBe(31.5); // 50.0 - 18.5
       expect(result.elevations.effectiveTipLevelM).toBe(31.5);
+    });
+
+    it('formatElevation properly handles positive, negative, zero, and null/undefined values', () => {
+      expect(formatElevation(3.0)).toBe('+3.00 m');
+      expect(formatElevation(2.555)).toBe('+2.56 m');
+      expect(formatElevation(-18.0)).toBe('-18.00 m');
+      expect(formatElevation(0)).toBe('0.00 m');
+      expect(formatElevation(null)).toBe('-');
+      expect(formatElevation(undefined)).toBe('-');
     });
   });
 

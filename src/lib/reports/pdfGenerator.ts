@@ -3,6 +3,7 @@ import autoTable from 'jspdf-autotable';
 import type { PileReportRow } from './excelGenerator';
 import {
   calculateDrivingLoadProfile,
+  formatElevation,
   type DrivingLoadProfileResult,
 } from '@/lib/calculations/drivingLoadProfile';
 import type { PileData } from '@/components/piles/matrix/matrixTypes';
@@ -243,7 +244,7 @@ export function generateIndividualPilePDFDocument({
   const setStatusText = !isDriven ? 'PENDING' : isSetPassed ? 'PASS' : 'RE-DRIVE';
 
   const tipText = elevations.effectiveTipLevelM !== null
-    ? `${elevations.effectiveTipLevelM.toFixed(2)} m (${elevations.isTipDerived ? 'Calc' : 'Stored'})`
+    ? `${formatElevation(elevations.effectiveTipLevelM)} (${elevations.isTipDerived ? 'Calc' : 'Stored'})`
     : '-';
 
   autoTable(doc, {
@@ -265,8 +266,8 @@ export function generateIndividualPilePDFDocument({
       pile.gridLine,
       pile.building || 'Building A',
       driving?.drivenLengthM ? `${driving.drivenLengthM} m` : '-',
-      elevations.groundLevelM !== null ? `${elevations.groundLevelM.toFixed(2)} m` : '-',
-      elevations.cutOffLevelM !== null ? `${elevations.cutOffLevelM.toFixed(2)} m` : '-',
+      elevations.groundLevelM !== null ? formatElevation(elevations.groundLevelM) : '-',
+      elevations.cutOffLevelM !== null ? formatElevation(elevations.cutOffLevelM) : '-',
       tipText,
       driving?.measuredLast10Cm ? `${driving.measuredLast10Cm} cm` : '-',
       setStatusText,
@@ -358,12 +359,37 @@ export function generateIndividualPilePDFDocument({
   const plotInnerW = singleChartWidth - plotInnerMarginLeft - plotInnerMarginRight;
   const plotInnerH = chartHeight - plotInnerMarginTop - plotInnerMarginBottom;
 
+  const getYFromElevationPDF = (elev: number) => {
+    if (!hasElevation) return curY + plotInnerMarginTop;
+    const norm = (domainMaxElev - elev) / elevSpan;
+    return curY + plotInnerMarginTop + Math.max(0, Math.min(plotInnerH, norm * plotInnerH));
+  };
+
+  const drawPDFElevationMarkers = (chartBaseX: number) => {
+    if (!hasElevation) return;
+    const markers = [
+      { label: 'GL', val: elevations.groundLevelM, color: [217, 119, 6] },
+      { label: 'COL', val: elevations.cutOffLevelM, color: [37, 99, 235] },
+      { label: elevations.isTipDerived ? 'TIP(Calc)' : 'TIP', val: elevations.effectiveTipLevelM, color: [220, 38, 38] },
+    ].filter((m): m is { label: string; val: number; color: number[] } => m.val !== null);
+
+    markers.forEach((m) => {
+      const y = getYFromElevationPDF(m.val);
+      doc.setDrawColor(m.color[0], m.color[1], m.color[2]);
+      doc.setLineWidth(0.25);
+      doc.line(chartBaseX + plotInnerMarginLeft, y, chartBaseX + plotInnerMarginLeft + plotInnerW, y);
+      doc.setFontSize(4.5);
+      doc.setFont('helvetica', 'bold');
+      doc.setTextColor(m.color[0], m.color[1], m.color[2]);
+      doc.text(`${m.label}: ${formatElevation(m.val)}`, chartBaseX + plotInnerMarginLeft + plotInnerW - 1, y - 0.8, { align: 'right' });
+    });
+  };
+
   const getYFromIndexPDF = (idx: number) => {
     if (hasElevation) {
       const pt = points[idx];
       if (pt && pt.elevationM !== null) {
-        const norm = (domainMaxElev - pt.elevationM) / elevSpan;
-        return curY + plotInnerMarginTop + Math.max(0, Math.min(plotInnerH, norm * plotInnerH));
+        return getYFromElevationPDF(pt.elevationM);
       }
     }
     if (totalIntervals <= 1) return curY + plotInnerMarginTop + plotInnerH / 2;
@@ -397,6 +423,9 @@ export function generateIndividualPilePDFDocument({
     doc.setTextColor(100, 116, 139);
     doc.text(`${val}`, x, curY + plotInnerMarginTop + plotInnerH + 4, { align: 'center' });
   });
+
+  // Elevation Reference Markers for Chart 1
+  drawPDFElevationMarkers(chart1X);
 
   // Polyline for Blows
   const validBlowPoints = points
@@ -462,6 +491,9 @@ export function generateIndividualPilePDFDocument({
       doc.text(`FS ${fs.factor}`, x, curY + plotInnerMarginTop - 1, { align: 'center' });
     }
   });
+
+  // Elevation Reference Markers for Chart 2
+  drawPDFElevationMarkers(chart2X);
 
   // Polyline for Load
   const validLoadPoints = points
