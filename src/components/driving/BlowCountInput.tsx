@@ -68,9 +68,49 @@ export default function BlowCountInput({
   const [isSelectDeleteMode, setIsSelectDeleteMode] = useState(false);
   const [selectedIndices, setSelectedIndices] = useState<Set<number>>(new Set());
 
-  // Editing state for retrospective inline entry
-  const [editingIndex, setEditingIndex] = useState<number | null>(null);
-  const [inlineEditValue, setInlineEditValue] = useState<string>('20');
+  // Small Rolling Modal state for editing intervals
+  const [editTarget, setEditTarget] = useState<{
+    index: number;
+    step: number;
+    value: number;
+  } | null>(null);
+
+  const handleOpenEditModal = (index: number) => {
+    const currentVal = blowCounts[index];
+    const initialVal = typeof currentVal === 'number' && currentVal > 0 ? currentVal : wheelBlowValue;
+    setEditTarget({
+      index,
+      step: index + 1,
+      value: initialVal,
+    });
+  };
+
+  const handleConfirmEditModal = () => {
+    if (editTarget) {
+      handleUpdateInterval(editTarget.index, editTarget.value);
+      setEditTarget(null);
+    }
+  };
+
+  const handleMarkSkippedInModal = () => {
+    if (editTarget) {
+      handleUpdateInterval(editTarget.index, null);
+      setEditTarget(null);
+    }
+  };
+
+  const handleNudgeEditValue = (delta: number) => {
+    if (editTarget) {
+      const newVal = Math.max(1, Math.min(150, editTarget.value + delta));
+      setEditTarget({ ...editTarget, value: newVal });
+    }
+  };
+
+  const handleSetEditValue = (val: number) => {
+    if (editTarget) {
+      setEditTarget({ ...editTarget, value: Math.max(1, Math.min(150, val)) });
+    }
+  };
 
   // Generate 1 to 150 blows for the wheel
   const wheelItems = Array.from({ length: 150 }, (_, i) => i + 1);
@@ -118,7 +158,6 @@ export default function BlowCountInput({
     }
     updated[index] = val;
     onChange(updated);
-    setEditingIndex(null);
   };
 
   // Toggle selection for bulk deletion
@@ -703,7 +742,6 @@ export default function BlowCountInput({
                   const isPending = idx > currentDrivenCount;
                   const val = idx < currentDrivenCount ? blowCounts[idx] : undefined;
                   const isSelected = selectedIndices.has(idx);
-                  const isInlineEditing = editingIndex === idx;
 
                   // Styling for rows
                   let rowBg = 'hover:bg-slate-50/70';
@@ -744,71 +782,50 @@ export default function BlowCountInput({
                         </div>
                       </td>
 
-                      {/* Blow Count Value / Quick Stepper */}
+                      {/* Blow Count Value / Quick Stepper & Rolling Modal Trigger */}
                       <td className="p-2.5">
                         {isRecorded && typeof val === 'number' ? (
-                          isInlineEditing ? (
-                            <div className="flex items-center gap-1">
-                              <input
-                                type="number"
-                                min="1"
-                                autoFocus
-                                value={inlineEditValue}
-                                onChange={(e) => setInlineEditValue(e.target.value)}
-                                onKeyDown={(e) => {
-                                  if (e.key === 'Enter') handleUpdateInterval(idx, parseInt(inlineEditValue) || 1);
-                                  if (e.key === 'Escape') setEditingIndex(null);
-                                }}
-                                className="w-16 px-1.5 py-0.5 text-xs font-bold font-mono bg-white border border-amber-400 rounded focus:outline-none focus:ring-1 focus:ring-amber-500"
-                              />
-                              <button
-                                type="button"
-                                onClick={() => handleUpdateInterval(idx, parseInt(inlineEditValue) || 1)}
-                                className="p-1 bg-amber-500 text-slate-950 rounded hover:bg-amber-600"
-                              >
-                                <Check className="w-3 h-3" />
-                              </button>
-                            </div>
-                          ) : (
-                            <div className="flex items-center gap-1.5">
-                              <button
-                                type="button"
-                                onClick={(e) => handleStepValue(idx, -1, e)}
-                                title="ลด 1 blow"
-                                className="w-5 h-5 rounded bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold flex items-center justify-center transition active:scale-95"
-                              >
-                                <Minus className="w-2.5 h-2.5" />
-                              </button>
+                          <div className="flex items-center gap-1.5">
+                            <button
+                              type="button"
+                              onClick={(e) => handleStepValue(idx, -1, e)}
+                              title="ลด 1 blow"
+                              className="w-5 h-5 rounded bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold flex items-center justify-center transition active:scale-95"
+                            >
+                              <Minus className="w-2.5 h-2.5" />
+                            </button>
 
-                              <span
-                                onClick={() => {
-                                  setEditingIndex(idx);
-                                  setInlineEditValue(String(val));
-                                }}
-                                title="แตะเพื่อพิมพ์แก้ไขตัวเลข"
-                                className="font-black font-mono text-sm text-slate-900 cursor-pointer hover:underline hover:text-amber-600 px-1"
-                              >
-                                {val}
-                              </span>
+                            <button
+                              type="button"
+                              onClick={() => handleOpenEditModal(idx)}
+                              title="แตะเพื่อหมุนเลือกตัวเลข (Small Rolling)"
+                              className="font-black font-mono text-sm text-slate-900 cursor-pointer hover:bg-amber-100 hover:text-amber-800 px-2 py-0.5 rounded-md transition flex items-center gap-1 group border border-transparent hover:border-amber-300"
+                            >
+                              <span>{val}</span>
+                              <Edit3 className="w-3 h-3 text-slate-400 group-hover:text-amber-600 opacity-0 group-hover:opacity-100 transition" />
+                            </button>
 
-                              <button
-                                type="button"
-                                onClick={(e) => handleStepValue(idx, 1, e)}
-                                title="เพิ่ม 1 blow"
-                                className="w-5 h-5 rounded bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold flex items-center justify-center transition active:scale-95"
-                              >
-                                <Plus className="w-2.5 h-2.5" />
-                              </button>
+                            <button
+                              type="button"
+                              onClick={(e) => handleStepValue(idx, 1, e)}
+                              title="เพิ่ม 1 blow"
+                              className="w-5 h-5 rounded bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold flex items-center justify-center transition active:scale-95"
+                            >
+                              <Plus className="w-2.5 h-2.5" />
+                            </button>
 
-                              <span className="text-[10px] text-slate-400 font-mono ml-1">
-                                {getConvertedText(val)}
-                              </span>
-                            </div>
-                          )
+                            <span className="text-[10px] text-slate-400 font-mono ml-1">
+                              {getConvertedText(val)}
+                            </span>
+                          </div>
                         ) : isSkipped ? (
-                          <span className="text-slate-400 font-mono text-xs italic">
-                            — (ไม่มีข้อมูล)
-                          </span>
+                          <button
+                            type="button"
+                            onClick={() => handleOpenEditModal(idx)}
+                            className="text-slate-400 hover:text-amber-700 font-mono text-xs italic hover:underline flex items-center gap-1"
+                          >
+                            <span>— (แตะเพื่อกรอก)</span>
+                          </button>
                         ) : isActive ? (
                           <span className="text-amber-800 font-bold text-[11px] font-mono">
                             {wheelBlowValue} {blowUnitLabel} (พร้อมบันทึก)
@@ -847,13 +864,11 @@ export default function BlowCountInput({
                           <div className="flex items-center justify-end gap-1">
                             <button
                               type="button"
-                              onClick={() => {
-                                setEditingIndex(idx);
-                                setInlineEditValue(String(val));
-                              }}
-                              className="px-2 py-0.5 rounded text-[10px] font-semibold text-slate-600 hover:bg-slate-100 transition"
+                              onClick={() => handleOpenEditModal(idx)}
+                              className="px-2 py-0.5 rounded text-[10px] font-semibold text-slate-600 hover:bg-amber-50 hover:text-amber-900 transition flex items-center gap-0.5"
                             >
-                              แก้ไข
+                              <Edit3 className="w-3 h-3" />
+                              <span>แก้ไข</span>
                             </button>
                             <button
                               type="button"
@@ -875,13 +890,11 @@ export default function BlowCountInput({
                           <div className="flex items-center justify-end gap-1">
                             <button
                               type="button"
-                              onClick={() => {
-                                setEditingIndex(idx);
-                                setInlineEditValue(String(wheelBlowValue));
-                              }}
-                              className="px-2 py-0.5 rounded-md text-[10px] font-bold bg-amber-100 text-amber-900 hover:bg-amber-200 transition border border-amber-300"
+                              onClick={() => handleOpenEditModal(idx)}
+                              className="px-2 py-0.5 rounded-md text-[10px] font-bold bg-amber-100 text-amber-900 hover:bg-amber-200 transition border border-amber-300 flex items-center gap-1"
                             >
-                              กรอกย้อนหลัง
+                              <Edit3 className="w-3 h-3" />
+                              <span>กรอกย้อนหลัง</span>
                             </button>
                             <button
                               type="button"
@@ -991,13 +1004,14 @@ export default function BlowCountInput({
                           <Minus className="w-2.5 h-2.5" />
                         </button>
 
-                        <input
-                          type="number"
-                          min="1"
-                          value={val}
-                          onChange={(e) => handleUpdateInterval(idx, parseInt(e.target.value) || 0)}
-                          className="w-11 text-center font-black text-xs text-slate-800 bg-transparent focus:outline-none focus:text-amber-600 font-mono"
-                        />
+                        <button
+                          type="button"
+                          onClick={() => handleOpenEditModal(idx)}
+                          title="แตะเพื่อหมุนเลือกตัวเลข (Small Rolling)"
+                          className="w-11 text-center font-black text-xs text-slate-800 hover:text-amber-700 hover:bg-amber-100/80 rounded py-0.5 transition font-mono"
+                        >
+                          {val}
+                        </button>
 
                         <button
                           type="button"
@@ -1017,8 +1031,8 @@ export default function BlowCountInput({
                       <span className="text-[10px] font-bold text-slate-600 block">ข้าม (Skipped)</span>
                       <button
                         type="button"
-                        onClick={() => handleUpdateInterval(idx, wheelBlowValue)}
-                        className="text-[9px] text-amber-700 underline font-bold mt-0.5"
+                        onClick={() => handleOpenEditModal(idx)}
+                        className="text-[9px] text-amber-700 hover:text-amber-800 underline font-bold mt-0.5 transition"
                       >
                         กรอกย้อนหลัง
                       </button>
@@ -1051,6 +1065,126 @@ export default function BlowCountInput({
                 </div>
               );
             })}
+          </div>
+        </div>
+      )}
+
+      {/* 7. Small Rolling Wheel Edit Modal */}
+      {editTarget !== null && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/60 backdrop-blur-xs animate-in fade-in"
+          onClick={() => setEditTarget(null)}
+        >
+          <div
+            className="bg-white rounded-2xl shadow-2xl border border-slate-200 max-w-xs w-full p-5 space-y-4 animate-in zoom-in-95 select-none"
+            onClick={(e) => e.stopPropagation()}
+          >
+            {/* Modal Header */}
+            <div className="flex items-center justify-between pb-2 border-b border-slate-100">
+              <div className="flex items-center gap-2">
+                <div className="w-7 h-7 rounded-lg bg-amber-100 flex items-center justify-center text-amber-700">
+                  <Edit3 className="w-4 h-4" />
+                </div>
+                <div>
+                  <h3 className="text-xs font-black text-slate-800">
+                    แก้ไข Blow Count ({unit === 'FEET' ? 'ฟุตที่' : 'เมตรที่'} {editTarget.step})
+                  </h3>
+                  <span className="text-[10px] text-slate-400 font-mono">
+                    ความลึกสะสม: {getAltDepthText(editTarget.step)}
+                  </span>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setEditTarget(null)}
+                className="text-slate-400 hover:text-slate-700 p-1 rounded-lg hover:bg-slate-100 transition"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            {/* Selected Value Preview */}
+            <div className="text-center py-2 bg-amber-50 rounded-xl border border-amber-200">
+              <span className="text-[10px] font-bold text-amber-800 uppercase block">ค่าที่เลือก</span>
+              <div className="text-2xl font-black font-mono text-amber-700">
+                {editTarget.value} <span className="text-xs font-normal">{blowUnitLabel}</span>
+              </div>
+              <div className="text-[10px] font-mono font-bold text-slate-500">
+                {getConvertedText(editTarget.value)}
+              </div>
+            </div>
+
+            {/* Small Rolling Wheel */}
+            <div className="flex justify-center">
+              <div className="w-36">
+                <RollingWheel
+                  items={wheelItems}
+                  value={editTarget.value}
+                  onChange={(val) => handleSetEditValue(Number(val))}
+                  label={`หมุนเลือก ${blowUnitLabel}`}
+                />
+              </div>
+            </div>
+
+            {/* Micro Steppers ±1 / ±5 */}
+            <div className="flex items-center justify-center gap-1.5 pt-1">
+              {[-5, -1, 1, 5].map((delta) => (
+                <button
+                  key={delta}
+                  type="button"
+                  onClick={() => handleNudgeEditValue(delta)}
+                  className="px-2.5 py-1 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-700 font-mono font-bold text-xs transition active:scale-95"
+                >
+                  {delta > 0 ? `+${delta}` : delta}
+                </button>
+              ))}
+            </div>
+
+            {/* Quick Presets */}
+            <div className="flex items-center justify-between gap-1 text-xs pt-0.5">
+              {[15, 20, 25, 30, 40, 50].map((preset) => (
+                <button
+                  key={preset}
+                  type="button"
+                  onClick={() => handleSetEditValue(preset)}
+                  className={`px-2 py-0.5 rounded text-[10px] font-mono font-bold transition ${
+                    editTarget.value === preset
+                      ? 'bg-amber-500 text-slate-950 font-black'
+                      : 'bg-white border border-slate-200 text-slate-700 hover:bg-slate-50'
+                  }`}
+                >
+                  {preset}
+                </button>
+              ))}
+            </div>
+
+            {/* Actions: Save / Skip / Cancel */}
+            <div className="space-y-2 pt-2 border-t border-slate-100">
+              <button
+                type="button"
+                onClick={handleConfirmEditModal}
+                className="w-full bg-amber-500 hover:bg-amber-600 text-slate-950 font-black py-2.5 rounded-xl text-xs flex items-center justify-center gap-1.5 shadow-sm transition active:scale-98"
+              >
+                <Check className="w-4 h-4" />
+                <span>บันทึกค่า {editTarget.value} Blows</span>
+              </button>
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={handleMarkSkippedInModal}
+                  className="flex-1 bg-slate-100 hover:bg-amber-100 border border-slate-200 text-slate-700 hover:text-amber-900 font-bold py-1.5 rounded-xl text-[11px] transition"
+                >
+                  เปลี่ยนเป็นข้าม
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setEditTarget(null)}
+                  className="flex-1 bg-white hover:bg-slate-50 border border-slate-200 text-slate-500 font-bold py-1.5 rounded-xl text-[11px] transition"
+                >
+                  ยกเลิก
+                </button>
+              </div>
+            </div>
           </div>
         </div>
       )}
