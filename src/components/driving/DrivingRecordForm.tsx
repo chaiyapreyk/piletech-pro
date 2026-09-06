@@ -81,9 +81,29 @@ export default function DrivingRecordForm({ pile }: { pile: PileData }) {
   const [totalPileLength, setTotalPileLength] = useState<number>(
     pile.drivingRecord?.totalPileLengthM ?? 21.0
   );
-  const [stickUpLength, setStickUpLength] = useState<number>(
+  // Auto-calculated Stick-up from recorded table
+  const drivenStepsCount = blowCounts.length;
+  const isWindowScope = recordScope === 'WINDOW';
+  
+  // In WINDOW mode (e.g. 20 ft): remaining unpenetrated feet = windowLength - drivenStepsCount
+  // (e.g. 20 - 14 = 6 ft -> 6 * 0.3048 = 1.83 m)
+  const remainingFeetInWindow = Math.max(0, windowLength - drivenStepsCount);
+  const calculatedStickUpFromTable = isWindowScope
+    ? (recordUnit === 'FEET'
+        ? Number((remainingFeetInWindow * 0.3048).toFixed(2))
+        : Number(Math.max(0, (windowLength * 0.3048) - drivenStepsCount).toFixed(2)))
+    : Number(Math.max(0, (Number(totalPileLength) || 21) - (recordUnit === 'FEET' ? drivenStepsCount * 0.3048 : drivenStepsCount)).toFixed(2));
+
+  // Determine if stick-up was manually overridden by user or should auto-sync from table
+  const [isStickUpAuto, setIsStickUpAuto] = useState<boolean>(
+    pile.drivingRecord?.stickUpLengthM !== undefined && pile.drivingRecord?.stickUpLengthM !== null ? false : true
+  );
+  const [manualStickUpLength, setManualStickUpLength] = useState<number>(
     pile.drivingRecord?.stickUpLengthM ?? 0.50
   );
+
+  const activeStickUp = isStickUpAuto ? calculatedStickUpFromTable : manualStickUpLength;
+
   const [groundLevel, setGroundLevel] = useState<number>(
     pile.drivingRecord?.groundLevelM ?? 3.00
   );
@@ -104,7 +124,7 @@ export default function DrivingRecordForm({ pile }: { pile: PileData }) {
 
   // Derived Engineering Calculations
   const totalLengthNum = Number(totalPileLength) || 0;
-  const stickUpNum = Number(stickUpLength) || 0;
+  const stickUpNum = activeStickUp;
   const groundLevelNum = Number(groundLevel) || 0;
   const cutOffLevelNum = Number(cutOffLevel) || 0;
 
@@ -446,20 +466,51 @@ export default function DrivingRecordForm({ pile }: { pile: PileData }) {
 
               {/* 2. Stick-up Length */}
               <div>
-                <label className="block text-[11px] font-bold text-slate-700 mb-1 flex items-center justify-between">
-                  <span>ระยะหัวเข็มพ้นดิน (Stick-up)</span>
-                  <span className="text-[10px] text-slate-400 font-normal">ตอกส่งใส่ค่าลบ</span>
-                </label>
+                <div className="flex items-center justify-between mb-1">
+                  <label className="text-[11px] font-bold text-slate-700 flex items-center gap-1">
+                    <span>ระยะหัวเข็มพ้นดิน (Stick-up)</span>
+                  </label>
+                  {isWindowScope && (
+                    <span className="text-[10px] text-slate-400 font-mono">
+                      ({windowLength} - {drivenStepsCount} {recordUnit === 'FEET' ? 'ft' : 'm'})
+                    </span>
+                  )}
+                </div>
+
                 <div className="relative">
                   <input
                     type="number"
                     step="0.05"
-                    value={stickUpLength}
-                    onChange={(e) => setStickUpLength(parseFloat(e.target.value) || 0)}
+                    value={activeStickUp}
+                    onChange={(e) => {
+                      setManualStickUpLength(parseFloat(e.target.value) || 0);
+                      setIsStickUpAuto(false);
+                    }}
                     placeholder="+0.50"
                     className="w-full text-xs font-mono font-bold bg-white border border-slate-300 rounded-lg px-2.5 py-1.5 pr-8 focus:ring-2 focus:ring-amber-500 focus:outline-none"
                   />
                   <span className="absolute right-2.5 top-1.5 text-slate-400 text-xs font-mono">ม.</span>
+                </div>
+
+                {/* Status Indicator & Sync Toggle */}
+                <div className="flex items-center justify-between mt-1 text-[10px]">
+                  {isStickUpAuto ? (
+                    <span className="text-emerald-700 font-bold flex items-center gap-0.5">
+                      <Sparkles className="w-2.5 h-2.5 text-emerald-600" />
+                      <span>ซิงก์จากตาราง ({isWindowScope ? `${remainingFeetInWindow} ft เหลือ` : 'Auto'})</span>
+                    </span>
+                  ) : (
+                    <span className="text-slate-500 font-medium flex items-center gap-1">
+                      <span>กำหนดเอง</span>
+                      <button
+                        type="button"
+                        onClick={() => setIsStickUpAuto(true)}
+                        className="text-amber-700 font-bold underline hover:text-amber-800 transition"
+                      >
+                        ซิงก์กลับ ({calculatedStickUpFromTable} ม.)
+                      </button>
+                    </span>
+                  )}
                 </div>
               </div>
 
