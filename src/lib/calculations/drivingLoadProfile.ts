@@ -293,24 +293,9 @@ export function calculateDrivingLoadProfile(
 
   const totalRawCount = rawBlows.length;
 
-  // Smart Unit Resolution:
-  // If recordUnit is FEET, but record is NOT explicitly WINDOW/LAST_N, and total blows count
-  // matches drivenLength in meters (e.g. 21 blows for a 21.0m pile):
-  // Resolve unit to METER so readings are mapped 1:1 per meter down to the tip.
-  let resolvedUnit: 'FEET' | 'METER' = recordUnit;
-  if (
-    recordUnit === 'FEET' &&
-    !isExplicitWindow &&
-    !record?.windowLengthFt &&
-    drivenLengthM !== null &&
-    totalRawCount > 0 &&
-    Math.abs(totalRawCount - drivenLengthM) <= 1
-  ) {
-    resolvedUnit = 'METER';
-  }
-
-  const intervalFactorM = resolvedUnit === 'FEET' ? 0.3048 : 1.0;
-  const totalRecordedSpanM = totalRawCount * intervalFactorM;
+  // Initial span check using default unit interval (0.3048m for FEET, 1.0m for METER)
+  const defaultIntervalM = recordUnit === 'METER' ? 1.0 : 0.3048;
+  const initialRecordedSpanM = totalRawCount * defaultIntervalM;
 
   // Smart Scope Resolution:
   // If explicitly WINDOW, or if record is NOT explicitly FULL and total recorded depth is <= 75% of driven length
@@ -319,10 +304,41 @@ export function calculateDrivingLoadProfile(
     isExplicitWindow ||
     (!isExplicitFull &&
       drivenLengthM !== null &&
-      totalRecordedSpanM > 0 &&
-      totalRecordedSpanM <= drivenLengthM * 0.75);
+      initialRecordedSpanM > 0 &&
+      initialRecordedSpanM <= drivenLengthM * 0.75);
 
   const resolvedScope: 'FULL' | 'WINDOW' = isWindowScope ? 'WINDOW' : 'FULL';
+
+  // Smart Depth Interval Resolution:
+  // In Thailand pile driving practice, blow count rate is typically recorded in Blow/ft,
+  // while depth intervals in the driving log may be marked either every 1 meter (e.g. 21 intervals for a 21m pile)
+  // or every 1 foot (e.g. 69 intervals for a 21m pile, or a 20ft window).
+  // This decouples the depth spacing along the Y-axis from the blow rate unit along the X-axis.
+  let depthIntervalStepM: number;
+  if (isWindowScope) {
+    depthIntervalStepM = recordUnit === 'METER' ? 1.0 : 0.3048;
+  } else {
+    // FULL scope:
+    if (
+      drivenLengthM !== null &&
+      totalRawCount > 0 &&
+      Math.abs(totalRawCount - drivenLengthM) <= 2
+    ) {
+      // 1-meter depth intervals (e.g. 21 points for 21m pile)
+      depthIntervalStepM = 1.0;
+    } else if (
+      drivenLengthM !== null &&
+      totalRawCount > 0 &&
+      Math.abs(totalRawCount * 0.3048 - drivenLengthM) <= 1.5
+    ) {
+      // 1-foot depth intervals (e.g. 69 points for 21m pile)
+      depthIntervalStepM = 0.3048;
+    } else if (recordUnit === 'METER') {
+      depthIntervalStepM = 1.0;
+    } else {
+      depthIntervalStepM = 0.3048;
+    }
+  }
 
   rawBlows.forEach((blows, idx) => {
     const intervalIndex = idx;
@@ -334,23 +350,23 @@ export function calculateDrivingLoadProfile(
 
     if (isWindowScope && drivenLengthM !== null) {
       // In WINDOW mode, the final recorded interval (idx = totalRawCount - 1) reaches drivenLengthM (effectiveTip).
-      // Each preceding interval is intervalFactorM higher.
+      // Each preceding interval is depthIntervalStepM higher.
       const remainingIntervalsToTip = totalRawCount - 1 - idx;
       cumulativePenetrationM = Number(
-        (drivenLengthM - remainingIntervalsToTip * intervalFactorM).toFixed(4)
+        (drivenLengthM - remainingIntervalsToTip * depthIntervalStepM).toFixed(4)
       );
       actualDepthM = cumulativePenetrationM;
 
       if (effectiveTip !== null) {
         elevationM = Number(
-          (effectiveTip + remainingIntervalsToTip * intervalFactorM).toFixed(3)
+          (effectiveTip + remainingIntervalsToTip * depthIntervalStepM).toFixed(3)
         );
       } else if (gl !== null) {
         elevationM = Number((gl - cumulativePenetrationM).toFixed(3));
       }
     } else {
       // FULL mode (starts from ground surface downwards)
-      cumulativePenetrationM = Number(((idx + 1) * intervalFactorM).toFixed(4));
+      cumulativePenetrationM = Number(((idx + 1) * depthIntervalStepM).toFixed(4));
       actualDepthM = cumulativePenetrationM;
       elevationM = gl !== null ? Number((gl - cumulativePenetrationM).toFixed(3)) : null;
     }
@@ -361,7 +377,7 @@ export function calculateDrivingLoadProfile(
 
     if (blows !== null && blows > 0) {
       if (blows > maxBlows) maxBlows = blows;
-      setCmPerBlow = calculatePenetrationSet(blows, resolvedUnit);
+      setCmPerBlow = calculatePenetrationSet(blows, recordUnit);
 
       if (hileyInput && setCmPerBlow > 0) {
         // Equivalent to 10 blows for hiley engine calculation
@@ -385,7 +401,7 @@ export function calculateDrivingLoadProfile(
     points.push({
       intervalIndex,
       depthDisplay,
-      depthDisplayUnit: resolvedUnit === 'FEET' ? 'ft' : 'm',
+      depthDisplayUnit: depthIntervalStepM === 1.0 ? 'm' : 'ft',
       cumulativePenetrationM,
       actualDepthM,
       elevationM,
@@ -431,7 +447,7 @@ export function calculateDrivingLoadProfile(
     : null;
 
   return {
-    recordUnit: resolvedUnit,
+    recordUnit,
     recordScope: resolvedScope,
     isWindowScope,
     points,

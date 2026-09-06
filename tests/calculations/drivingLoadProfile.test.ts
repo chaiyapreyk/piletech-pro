@@ -227,6 +227,38 @@ describe('Driving Load Profile Engine (spec 2026-09-06)', () => {
       expect(firstPoint.cumulativePenetrationM).toBeCloseTo(15.209, 3);
     });
 
+    it('maps FULL scope 1-meter intervals correctly when interval count matches driven length in meters, while preserving Blow/ft unit and capacity calculation', () => {
+      // 21 blows recorded for a 21m pile (GL +3.00, Tip -18.00) in Blow/ft
+      const blows21 = [10, 12, 14, 15, 18, 20, 22, 24, 25, 28, 30, 32, 35, 38, 40, 42, 45, 48, 52, 58, 65];
+      const record: DrivingRecordInput = {
+        penetrationBlows: JSON.stringify(blows21),
+        recordUnit: 'FEET',
+        recordScope: 'FULL',
+        groundLevelM: 3.0,
+        cutOffLevelM: 2.5,
+        tipLevelM: -18.0,
+        drivenLengthM: 21.0,
+      };
+
+      const result = calculateDrivingLoadProfile(record, standardCriteria);
+
+      expect(result.recordUnit).toBe('FEET');
+      expect(result.recordScope).toBe('FULL');
+      expect(result.points).toHaveLength(21);
+
+      // Final point reaches Tip Level (-18.00m) at 21.0m penetration depth
+      const lastPoint = result.points[20];
+      expect(lastPoint.cumulativePenetrationM).toBe(21.0);
+      expect(lastPoint.elevationM).toBe(-18.0);
+      expect(lastPoint.recordedBlows).toBe(65);
+
+      // Penetration set calculated in Blow/ft: 30.48 / 65 = 0.4689 cm/blow
+      expect(lastPoint.setCmPerBlow).toBeCloseTo(0.4689, 4);
+
+      // Capacity should exceed FS 2.5 (87.5t)
+      expect(lastPoint.estimatedUltimateLoadT).toBeGreaterThan(87.5);
+    });
+
     it('derives tip level when tipLevelM is absent and labels it as derived', () => {
       const record: DrivingRecordInput = {
         penetrationBlows: JSON.stringify([20, 25]),

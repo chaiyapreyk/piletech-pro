@@ -192,7 +192,7 @@ async function main() {
         data: {
           pileId: pile.id,
           penetrationBlows: JSON.stringify(p.blows),
-          recordUnit: 'METER',
+          recordUnit: 'FEET',
           recordScope: 'FULL',
           measuredLast10Cm: p.measured10,
           measuredTempCCm: 1.2,

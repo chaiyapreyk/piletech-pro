@@ -59,7 +59,7 @@ export default function PileLoadProfileChart({
 
   const totalIntervals = points.length;
   const isFeet = recordUnit === 'FEET';
-  const blowUnitLabel = isFeet ? 'blw/ft' : 'blw/m';
+  const blowUnitLabel = isFeet ? 'Blow/ft' : 'Blow/m';
   const depthUnitLabel = isFeet ? 'ft' : 'm';
 
   // Check if we have ground level to map elevations
@@ -324,7 +324,7 @@ export default function PileLoadProfileChart({
                 <rect x={marginLeft} y={marginTop} width={plotWidth} height={plotHeight} fill="#fafafa" rx={4} />
 
                 {/* Vertical grid lines for Blows */}
-                {[0.25, 0.5, 0.75, 1.0].map((frac, idx) => {
+                {[0, 0.25, 0.5, 0.75, 1.0].map((frac, idx) => {
                   const val = Math.round(blowScaleMax * frac);
                   const x = marginLeft + frac * plotWidth;
                   return (
@@ -525,7 +525,7 @@ export default function PileLoadProfileChart({
                     <rect x={marginLeft} y={marginTop} width={plotWidth} height={plotHeight} fill="#fafafa" rx={4} />
 
                     {/* Vertical grid lines for Load (Ru) */}
-                    {[0.25, 0.5, 0.75, 1.0].map((frac, idx) => {
+                    {[0, 0.25, 0.5, 0.75, 1.0].map((frac, idx) => {
                       const val = Math.round(loadScaleMax * frac);
                       const x = marginLeft + frac * plotWidth;
                       return (

@@ -404,7 +404,7 @@ export function generateIndividualPilePDFDocument({
   doc.setFontSize(7.5);
   doc.setFont('helvetica', 'bold');
   doc.setTextColor(30, 41, 59);
-  doc.text(`1. Blow Count Profile (${recordUnit === 'FEET' ? 'blw/ft' : 'blw/m'})`, chart1X + 3, curY + 5);
+  doc.text(`1. Blow Count Profile (${recordUnit === 'FEET' ? 'Blow/ft' : 'Blow/m'})`, chart1X + 3, curY + 5);
 
   const blowScaleMax = Math.ceil(Math.max(maxBlows, 30) / 10) * 10;
   const getBlowXPDF = (blows: number) => {
