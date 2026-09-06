@@ -2,6 +2,7 @@ import { getActiveProject } from '@/lib/activeProject';
 import Link from 'next/link';
 import { HardHat, ShieldCheck, CheckCircle2, AlertCircle, Clock, Plus, ChevronRight, Building2 } from 'lucide-react';
 import DeletePileButton from '@/components/piles/DeletePileButton';
+import EditPileButton from '@/components/piles/EditPileButton';
 import PileNumberMatrix from '@/components/piles/PileNumberMatrix';
 import { calculateAverageBlows } from '@/lib/calculations/drivingLog';
 
@@ -215,6 +216,10 @@ export default async function PilesListPage() {
                       )}
                     </td>
                     <td className="p-3.5 text-right space-x-1.5 whitespace-nowrap">
+                      <EditPileButton
+                        pile={pile}
+                        criteriaList={project?.criteria ? JSON.parse(JSON.stringify(project.criteria)) : []}
+                      />
                       <Link
                         href={`/piles/${pile.id}/drive`}
                         className="inline-flex items-center gap-1 bg-amber-500 hover:bg-amber-600 text-slate-950 px-2.5 py-1.5 rounded-md text-[11px] font-bold shadow-xs"
