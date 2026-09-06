@@ -16,7 +16,8 @@ This change shall:
 4. Show the pile tip level and relevant elevations on the chart.
 5. Make the chart available from a read-only "View Data" action without opening the driving-record editor.
 6. Include the full chart in the Individual Pile PDF report.
-7. Preserve drawing upload, pile placement, and drawing status reporting as a future phase.
+7. Capture the actual pile-driving date and summarize actual productivity and cumulative progress.
+8. Preserve drawing upload, pile placement, and drawing status reporting as a future phase.
 
 ## 2. Scope Boundaries
 
@@ -27,6 +28,8 @@ This change shall:
 - Synchronized Blow Count and Estimated Ultimate Load charts.
 - FS reference lines and elevation markers.
 - Individual Pile PDF chart output.
+- Editable actual driving date with safe preservation on later record edits.
+- Actual productivity dashboard with daily pile count, daily driven length, rolling average, peak day, and cumulative progress.
 - Calculation, API, component, and report tests.
 
 ### Excluded
@@ -37,6 +40,7 @@ This change shall:
 - Drawing status overlays and drawing reports.
 - Replacing PDA/CAPWAP or static load testing.
 - Adding a new independent bearing-capacity formula.
+- Planned-versus-actual baselines, target piles per day, earned-value metrics, or ahead/behind schedule status.
 
 ## 3. Chosen Approach
 
@@ -173,6 +177,40 @@ Opening this view must not put fields into edit mode or allow accidental data mu
 - Charts handle mobile width without horizontal page overflow.
 - Print rendering uses a white background and deterministic dimensions.
 
+### 5.4 Actual Driving Date
+
+The driving-record form shall include an editable `Actual Driving Date` field:
+
+- A new record defaults to the user's current calendar date.
+- Saving an existing record preserves the stored date unless the user explicitly changes it.
+- The API must stop overwriting `Pile.driveDate` with `new Date()` on every save.
+- The client sends a date-only value in `YYYY-MM-DD` form.
+- The API validates it as a real date that is not in the future, then stores it with date-only UTC semantics to avoid time-of-day grouping errors.
+- The date appears in pile tables, read-only View Data, Individual Pile PDF, and productivity summaries.
+- Existing driven records without a valid date appear in a data-quality count named `Missing driving date` and are excluded from date-based charts until corrected.
+
+A pile counts as driven productivity when it has a saved `DrivingRecord` and a valid `driveDate`. Both `COMPLETED` and `ISSUE` piles count as work performed; pass/fail remains a separate quality measure.
+
+### 5.5 Actual Productivity and Cumulative Progress
+
+Add a Productivity panel to the project dashboard with filters for Last 7 days, Last 14 days, Last 30 days, custom date range, Building, and pile criteria/type.
+
+KPI cards show piles driven in the selected period, total driven length, average piles per calendar day, seven-calendar-day rolling average including zero-production days, peak production date/count, overall cumulative progress, and missing driving date count.
+
+The chart uses daily bars for `Piles driven per day`, a toggle for `Driven length per day (m)`, and a cumulative driven-pile percentage line. Calendar dates with zero production remain visible. It uses actual records only and does not show planned, ahead, or behind status.
+
+Definitions:
+
+```
+dailyPileCount = count(saved DrivingRecord with valid driveDate on date)
+dailyDrivenLengthM = sum(drivenLengthM for those records)
+cumulativeProgressPercent = cumulativeDrivenPileCount / totalProjectPileCount * 100
+averagePilesPerCalendarDay = selectedPeriodPileCount / selectedCalendarDayCount
+rolling7DayAverage = sum(dailyPileCount for current day and prior 6 calendar days) / 7
+```
+
+A pile contributes once using its current actual driving date. Editing the date moves that pile between daily buckets without changing the overall driven total.
+
 ## 6. Reporting
 
 The Individual Pile PDF includes:
@@ -200,6 +238,8 @@ flowchart TD
     B --> C["Normalized chart dataset"]
     C --> D["Read-only detail charts"]
     C --> E["Individual Pile PDF"]
+    A --> F["Productivity aggregation"]
+    F --> G["Dashboard productivity"]
 ```
 
 Recommended units:
@@ -208,6 +248,8 @@ Recommended units:
 - `src/components/driving/PileLoadProfileChart.tsx`: chart presentation only.
 - A read-only pile detail component under `src/components/piles/`.
 - Existing project API and project switcher for project-information editing.
+- A pure productivity aggregation module under `src/lib/calculations/` consumed by the dashboard.
+- Existing pile and driving APIs updated to return and preserve `driveDate`.
 - Existing PDF generator/exporter for the report integration.
 
 React components must not contain authoritative engineering formulas. UI and PDF must consume the same normalized dataset.
@@ -232,6 +274,8 @@ React components must not contain authoritative engineering formulas. UI and PDF
 - Null, skipped, zero, negative, NaN, and malformed blow data do not create load points.
 - Measured compression overrides criteria compression only when valid.
 - Elevation and derived tip calculations are correct.
+- Daily count, driven-length sum, cumulative percentage, calendar-day average, and rolling seven-day average match fixed date fixtures.
+- COMPLETED and ISSUE records with valid dates count once; PLANNED records and records without driving data do not count.
 
 ### UI tests
 
@@ -241,6 +285,9 @@ React components must not contain authoritative engineering formulas. UI and PDF
 - Tip, cut-off, and ground markers render when available.
 - Stored and calculated tip labels are different.
 - Project information validates required and unique code values.
+- New records default the driving date; existing records preserve it unless explicitly changed.
+- Productivity filters return correct values and include zero-production calendar days.
+- Missing driving dates are identified without being placed in an incorrect daily bucket.
 - Mobile view does not overflow horizontally.
 
 ### Report tests
@@ -257,7 +304,8 @@ React components must not contain authoritative engineering formulas. UI and PDF
 - New calculation and component tests pass.
 - Production build succeeds.
 - Read-only detail and PDF are visually verified using at least one FEET record, one METER record, one skipped interval, and one missing-criteria pile.
-- No schema migration is required for the current release.
+- Productivity is verified across at least ten calendar days containing production, zero-production days, an ISSUE pile, and an edited driving date.
+- No schema migration is required for the current release because `Pile.driveDate` already exists.
 
 ## 10. Engineering Use Limitation
 
