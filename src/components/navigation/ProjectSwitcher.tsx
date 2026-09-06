@@ -2,7 +2,7 @@
 
 import React, { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
-import { Building2, ChevronDown, Plus, Check, X, Sparkles, Layers, Trash2, AlertTriangle } from 'lucide-react';
+import { Building2, ChevronDown, Plus, Check, X, Sparkles, Layers, Trash2, AlertTriangle, Edit3, Loader2 } from 'lucide-react';
 import { useToast } from '@/components/ui/ToastProvider';
 
 interface ProjectItem {
@@ -25,6 +25,18 @@ export default function ProjectSwitcher() {
   const [selectedProjectId, setSelectedProjectId] = useState<string>('');
   const [isOpen, setIsOpen] = useState(false);
   const [showCreateModal, setShowCreateModal] = useState(false);
+
+  // Edit Project State
+  const [projectToEdit, setProjectToEdit] = useState<ProjectItem | null>(null);
+  const [showEditModal, setShowEditModal] = useState(false);
+  const [editName, setEditName] = useState('');
+  const [editCode, setEditCode] = useState('');
+  const [editLocation, setEditLocation] = useState('');
+  const [editClient, setEditClient] = useState('');
+  const [editConsultant, setEditConsultant] = useState('');
+  const [editContractor, setEditContractor] = useState('');
+  const [editInlineError, setEditInlineError] = useState<string | null>(null);
+  const [isSavingEdit, setIsSavingEdit] = useState(false);
 
   // Delete Project State
   const [projectToDelete, setProjectToDelete] = useState<ProjectItem | null>(null);
@@ -119,6 +131,60 @@ export default function ProjectSwitcher() {
       toast.error(err.message || 'เกิดข้อผิดพลาดในการสร้างโครงการ');
     } finally {
       setIsSubmitting(false);
+    }
+  };
+
+  const handleOpenEdit = (proj: ProjectItem) => {
+    setProjectToEdit(proj);
+    setEditName(proj.name || '');
+    setEditCode(proj.code || '');
+    setEditLocation(proj.location || '');
+    setEditClient(proj.clientName || '');
+    setEditConsultant(proj.consultantName || '');
+    setEditContractor(proj.contractorName || '');
+    setEditInlineError(null);
+    setShowEditModal(true);
+    setIsOpen(false);
+  };
+
+  const handleSaveEditProject = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!projectToEdit) return;
+    if (!editName.trim() || !editCode.trim()) {
+      setEditInlineError('กรุณากรอกชื่อโครงการ และรหัสโครงการ');
+      return;
+    }
+
+    try {
+      setIsSavingEdit(true);
+      setEditInlineError(null);
+      const res = await fetch(`/api/projects/${projectToEdit.id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          name: editName.trim(),
+          code: editCode.trim(),
+          location: editLocation.trim(),
+          clientName: editClient.trim(),
+          consultantName: editConsultant.trim(),
+          contractorName: editContractor.trim(),
+        }),
+      });
+
+      const data = await res.json();
+      if (!res.ok) {
+        throw new Error(data.error || 'Failed to update project');
+      }
+
+      toast.success(`บันทึกข้อมูลโครงการ "${editName.trim()}" สำเร็จ`);
+      setShowEditModal(false);
+      setProjectToEdit(null);
+      await fetchProjects();
+      router.refresh();
+    } catch (err: any) {
+      setEditInlineError(err.message || 'เกิดข้อผิดพลาดในการบันทึกข้อมูลโครงการ');
+    } finally {
+      setIsSavingEdit(false);
     }
   };
 
@@ -222,30 +288,54 @@ export default function ProjectSwitcher() {
                       </div>
                     </button>
 
-                    <button
-                      type="button"
-                      title={projects.length <= 1 ? 'ไม่สามารถลบโครงการสุดท้ายได้' : `ลบโครงการ ${proj.code}`}
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        if (projects.length <= 1) {
-                          alert('ไม่สามารถลบโครงการสุดท้ายได้ ระบบต้องมีอย่างน้อย 1 โครงการ');
-                          return;
-                        }
-                        setProjectToDelete(proj);
-                        setShowDeleteModal(true);
-                        setIsOpen(false);
-                      }}
-                      className="p-1.5 rounded-lg text-slate-500 hover:text-rose-400 hover:bg-rose-500/20 transition cursor-pointer shrink-0"
-                    >
-                      <Trash2 className="w-4 h-4" />
-                    </button>
+                    <div className="flex items-center gap-1 shrink-0">
+                      <button
+                        type="button"
+                        title={`แก้ไขข้อมูลโครงการ ${proj.code}`}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          handleOpenEdit(proj);
+                        }}
+                        className="p-1.5 rounded-lg text-slate-400 hover:text-amber-400 hover:bg-amber-500/20 transition cursor-pointer"
+                      >
+                        <Edit3 className="w-3.5 h-3.5" />
+                      </button>
+
+                      <button
+                        type="button"
+                        title={projects.length <= 1 ? 'ไม่สามารถลบโครงการสุดท้ายได้' : `ลบโครงการ ${proj.code}`}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          if (projects.length <= 1) {
+                            alert('ไม่สามารถลบโครงการสุดท้ายได้ ระบบต้องมีอย่างน้อย 1 โครงการ');
+                            return;
+                          }
+                          setProjectToDelete(proj);
+                          setShowDeleteModal(true);
+                          setIsOpen(false);
+                        }}
+                        className="p-1.5 rounded-lg text-slate-500 hover:text-rose-400 hover:bg-rose-500/20 transition cursor-pointer"
+                      >
+                        <Trash2 className="w-3.5 h-3.5" />
+                      </button>
+                    </div>
                   </div>
                 );
               })}
             </div>
 
-            {/* Action to create new project */}
-            <div className="p-2 border-t border-slate-800 bg-slate-950">
+            {/* Action to edit current or create new project */}
+            <div className="p-2 border-t border-slate-800 bg-slate-950 space-y-1.5">
+              {activeProject && (
+                <button
+                  type="button"
+                  onClick={() => handleOpenEdit(activeProject)}
+                  className="w-full flex items-center justify-center gap-1.5 py-2 px-3 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-bold transition cursor-pointer"
+                >
+                  <Edit3 className="w-3.5 h-3.5 text-amber-400" />
+                  <span>แก้ไขข้อมูลโครงการ ({activeProject.code})</span>
+                </button>
+              )}
               <button
                 type="button"
                 onClick={() => {
@@ -253,7 +343,7 @@ export default function ProjectSwitcher() {
                   setNewCode(`PROJ-${new Date().getFullYear()}-${String(projects.length + 1).padStart(2, '0')}`);
                   setShowCreateModal(true);
                 }}
-                className="w-full flex items-center justify-center gap-1.5 py-2 px-3 rounded-xl bg-amber-500 hover:bg-amber-600 text-slate-950 text-xs font-bold transition shadow-xs"
+                className="w-full flex items-center justify-center gap-1.5 py-2 px-3 rounded-xl bg-amber-500 hover:bg-amber-600 text-slate-950 text-xs font-bold transition shadow-xs cursor-pointer"
               >
                 <Plus className="w-3.5 h-3.5" />
                 <span>+ สร้างโครงการ / อาคารใหม่</span>
@@ -461,6 +551,158 @@ export default function ProjectSwitcher() {
                 </button>
               </div>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* Edit Project Information Modal */}
+      {showEditModal && projectToEdit && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/70 backdrop-blur-xs animate-in fade-in duration-150 text-slate-900">
+          <div className="bg-white rounded-2xl shadow-2xl border border-slate-200 w-full max-w-lg overflow-hidden animate-in zoom-in-95 duration-150">
+            <div className="bg-slate-900 text-white p-4 flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <div className="bg-amber-500 p-1.5 rounded-lg text-slate-950">
+                  <Edit3 className="w-4 h-4" />
+                </div>
+                <div>
+                  <h3 className="text-base font-black">แก้ไขข้อมูลโครงการ</h3>
+                  <span className="text-[10px] text-amber-400 font-semibold block uppercase tracking-wider">
+                    EDIT PROJECT INFORMATION
+                  </span>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => {
+                  setShowEditModal(false);
+                  setProjectToEdit(null);
+                }}
+                className="text-slate-400 hover:text-white p-1 rounded-lg"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <form onSubmit={handleSaveEditProject} className="p-5 space-y-3.5">
+              {editInlineError && (
+                <div className="p-3 bg-rose-50 border border-rose-200 rounded-xl text-xs font-bold text-rose-700 flex items-center gap-2 animate-in fade-in">
+                  <AlertTriangle className="w-4 h-4 shrink-0 text-rose-600" />
+                  <span>{editInlineError}</span>
+                </div>
+              )}
+
+              <div>
+                <label className="block text-xs font-bold text-slate-700 mb-1">
+                  ชื่อโครงการ / อาคาร (Project Name) <span className="text-rose-500">*</span>
+                </label>
+                <input
+                  type="text"
+                  required
+                  value={editName}
+                  onChange={(e) => setEditName(e.target.value)}
+                  className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-xs font-semibold focus:bg-white focus:outline-none focus:ring-2 focus:ring-amber-500"
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold text-slate-700 mb-1">
+                  รหัสโครงการ (Project Code) <span className="text-rose-500">*</span>
+                </label>
+                <input
+                  type="text"
+                  required
+                  value={editCode}
+                  onChange={(e) => setEditCode(e.target.value)}
+                  className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-xs font-bold font-mono focus:bg-white focus:outline-none focus:ring-2 focus:ring-amber-500"
+                />
+                <span className="text-[10px] text-slate-400 mt-1 block">
+                  รหัสต้องไม่ซ้ำกับโครงการอื่นในระบบ
+                </span>
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold text-slate-700 mb-1">
+                  สถานที่ก่อสร้าง (Location)
+                </label>
+                <input
+                  type="text"
+                  value={editLocation}
+                  onChange={(e) => setEditLocation(e.target.value)}
+                  placeholder="เช่น พระราม 9 ห้วยขวาง กรุงเทพฯ"
+                  className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-xs font-semibold focus:bg-white focus:outline-none focus:ring-2 focus:ring-amber-500"
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold text-slate-700 mb-1">
+                  เจ้าของโครงการ / ลูกค้า (Client / Owner)
+                </label>
+                <input
+                  type="text"
+                  value={editClient}
+                  onChange={(e) => setEditClient(e.target.value)}
+                  placeholder="เช่น บริษัท แกรนด์ พร็อพเพอร์ตี้ จำกัด"
+                  className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-xs font-semibold focus:bg-white focus:outline-none focus:ring-2 focus:ring-amber-500"
+                />
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 mb-1">
+                    บริษัทที่ปรึกษา (Consultant)
+                  </label>
+                  <input
+                    type="text"
+                    value={editConsultant}
+                    onChange={(e) => setEditConsultant(e.target.value)}
+                    className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-xs focus:bg-white focus:outline-none focus:ring-2 focus:ring-amber-500"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 mb-1">
+                    ผู้รับเหมาตอก (Contractor)
+                  </label>
+                  <input
+                    type="text"
+                    value={editContractor}
+                    onChange={(e) => setEditContractor(e.target.value)}
+                    className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-xs focus:bg-white focus:outline-none focus:ring-2 focus:ring-amber-500"
+                  />
+                </div>
+              </div>
+
+              <div className="pt-3 flex items-center justify-end gap-2 border-t border-slate-100">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setShowEditModal(false);
+                    setProjectToEdit(null);
+                  }}
+                  disabled={isSavingEdit}
+                  className="px-4 py-2 rounded-lg text-xs font-bold text-slate-600 hover:bg-slate-100 transition cursor-pointer"
+                >
+                  ยกเลิก
+                </button>
+                <button
+                  type="submit"
+                  disabled={isSavingEdit}
+                  className="px-4 py-2 rounded-lg text-xs font-bold bg-amber-500 hover:bg-amber-600 text-slate-950 transition shadow-sm disabled:opacity-50 inline-flex items-center gap-1.5 cursor-pointer"
+                >
+                  {isSavingEdit ? (
+                    <>
+                      <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                      <span>กำลังบันทึก...</span>
+                    </>
+                  ) : (
+                    <>
+                      <Check className="w-3.5 h-3.5" />
+                      <span>บันทึกการแก้ไข</span>
+                    </>
+                  )}
+                </button>
+              </div>
+            </form>
           </div>
         </div>
       )}

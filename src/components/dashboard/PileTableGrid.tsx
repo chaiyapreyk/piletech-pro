@@ -2,8 +2,9 @@
 
 import React, { useState, useMemo } from 'react';
 import Link from 'next/link';
-import { Search, Filter, HardHat, ShieldCheck, CheckCircle2, AlertCircle, Clock } from 'lucide-react';
+import { Search, Filter, HardHat, ShieldCheck, CheckCircle2, AlertCircle, Clock, Eye } from 'lucide-react';
 import DeletePileButton from '@/components/piles/DeletePileButton';
+import PileDetailModal from '@/components/piles/PileDetailModal';
 import { calculateAverageBlows } from '@/lib/calculations/drivingLog';
 
 interface PileItem {
@@ -34,6 +35,7 @@ export default function PileTableGrid({ piles }: { piles: PileItem[] }) {
   const [search, setSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState('ALL');
   const [qcFilter, setQcFilter] = useState('ALL');
+  const [selectedPile, setSelectedPile] = useState<any | null>(null);
 
   const filteredPiles = useMemo(() => {
     return piles.filter((p) => {
@@ -239,6 +241,15 @@ export default function PileTableGrid({ piles }: { piles: PileItem[] }) {
                       )}
                     </td>
                     <td className="p-3.5 text-right space-x-1.5 whitespace-nowrap">
+                      <button
+                        type="button"
+                        onClick={() => setSelectedPile(pile)}
+                        className="inline-flex items-center gap-1 bg-slate-900 hover:bg-slate-800 text-white px-2.5 py-1.5 rounded text-[11px] font-bold shadow-xs cursor-pointer"
+                        title="ดูข้อมูลและกราฟการตอก (View Data & Load Profile)"
+                      >
+                        <Eye className="w-3 h-3 text-amber-400" />
+                        <span>ดูข้อมูล</span>
+                      </button>
                       <Link
                         href={`/piles/${pile.id}/drive`}
                         className="inline-flex items-center gap-1 bg-amber-500 hover:bg-amber-600 text-slate-950 px-2.5 py-1.5 rounded text-[11px] font-bold shadow-xs"
@@ -262,6 +273,13 @@ export default function PileTableGrid({ piles }: { piles: PileItem[] }) {
           </tbody>
         </table>
       </div>
+
+      {selectedPile && (
+        <PileDetailModal
+          pile={selectedPile}
+          onClose={() => setSelectedPile(null)}
+        />
+      )}
     </div>
   );
 }

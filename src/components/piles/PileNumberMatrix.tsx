@@ -45,6 +45,7 @@ import MatrixTableView from './matrix/MatrixTableView';
 import MatrixDenseHeatmap from './matrix/MatrixDenseHeatmap';
 import MatrixCardsView from './matrix/MatrixCardsView';
 import MatrixDetailedTable from './matrix/MatrixDetailedTable';
+import PileDetailModal from './PileDetailModal';
 
 interface PileNumberMatrixProps {
   initialPiles: PileData[];
@@ -947,160 +948,13 @@ export default function PileNumberMatrix({
         )}
       </div>
 
-      {/* 4. Pile Quick Action Modal */}
+      {/* 4. Read-Only Pile Detail Modal with Synchronized Charts & PDF Export */}
       {selectedPile && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs animate-in fade-in duration-150">
-          <div className="bg-white rounded-2xl shadow-xl border border-slate-200 w-full max-w-md overflow-hidden animate-in zoom-in-95 duration-150">
-            {/* Modal Header */}
-            <div className="bg-slate-900 text-white p-4 flex items-center justify-between">
-              <div>
-                <span className="text-[10px] font-bold uppercase tracking-wider text-amber-400">
-                  รายละเอียดเสาเข็ม
-                </span>
-                <h3 className="text-xl font-black font-mono flex items-center gap-2">
-                  <span>{selectedPile.pileNo}</span>
-                  <span className="text-xs font-normal text-slate-300">({selectedPile.gridLine})</span>
-                </h3>
-              </div>
-              <button
-                onClick={() => setSelectedPile(null)}
-                className="text-slate-400 hover:text-white p-1 rounded-lg"
-              >
-                <X className="w-5 h-5" />
-              </button>
-            </div>
-
-            {/* Modal Body */}
-            <div className="p-5 space-y-4 text-xs">
-              {/* Status Header */}
-              <div className="flex items-center justify-between p-3 rounded-xl bg-slate-50 border border-slate-200">
-                <span className="font-bold text-slate-600">สถานะปัจจุบัน:</span>
-                {!selectedPile.drivingRecord ? (
-                  <span className="inline-flex items-center gap-1 font-bold text-amber-700 bg-amber-100 px-2.5 py-1 rounded-full text-xs">
-                    <Clock className="w-3.5 h-3.5" /> ยังไม่ได้ตอก (รอตอก)
-                  </span>
-                ) : selectedPile.drivingRecord.isSetPassed ? (
-                  <span className="inline-flex items-center gap-1 font-bold text-emerald-800 bg-emerald-100 px-2.5 py-1 rounded-full text-xs">
-                    <CheckCircle2 className="w-3.5 h-3.5" /> ตอกเสร็จ Set ผ่านเกณฑ์
-                  </span>
-                ) : (
-                  <span className="inline-flex items-center gap-1 font-bold text-rose-800 bg-rose-100 px-2.5 py-1 rounded-full text-xs">
-                    <AlertCircle className="w-3.5 h-3.5" /> Set ไม่ผ่าน (ต้อง Re-drive)
-                  </span>
-                )}
-              </div>
-
-              {/* Data Grid */}
-              <div className="grid grid-cols-2 gap-2">
-                <div className="p-3 bg-slate-50 rounded-lg border border-slate-100">
-                  <span className="text-slate-400 block text-[10px] font-semibold">ประเภทเสาเข็ม / สเปกคำนวณ</span>
-                  <div className="flex items-center justify-between gap-1 mt-0.5">
-                    <span className="font-bold text-slate-800 truncate" title={selectedPile.criteria?.name || selectedPile.criteria?.pileType}>
-                      {selectedPile.criteria?.name || selectedPile.criteria?.pileType || 'ยังไม่กำหนดสเปก'}
-                    </span>
-                    <button
-                      type="button"
-                      onClick={() => handleOpenEdit(selectedPile)}
-                      className="text-[10px] text-indigo-600 hover:text-indigo-800 font-bold hover:underline whitespace-nowrap"
-                    >
-                      [เปลี่ยนขนาด]
-                    </button>
-                  </div>
-                  {selectedPile.criteria?.id && (
-                    <Link
-                      href={`/calculator?criteriaId=${selectedPile.criteria.id}`}
-                      className="inline-flex items-center gap-1 text-[10px] text-blue-600 hover:text-blue-800 hover:underline font-semibold mt-1"
-                    >
-                      <Sparkles className="w-3 h-3" /> ดูรายการคำนวณ Hiley
-                    </Link>
-                  )}
-                </div>
-
-                <div className="p-3 bg-slate-50 rounded-lg border border-slate-100">
-                  <span className="text-slate-400 block text-[10px] font-semibold">Safe Load (Ra)</span>
-                  <span className="font-bold text-slate-800 mt-0.5 block">
-                    {selectedPile.criteria?.safeWorkingLoadT || 30} ตัน
-                  </span>
-                </div>
-
-                <div className="p-3 bg-slate-50 rounded-lg border border-slate-100">
-                  <span className="text-slate-400 block text-[10px] font-semibold">ความลึกที่ตอก (Driven Length)</span>
-                  <span className="font-bold text-slate-800 mt-0.5 block font-mono">
-                    {selectedPile.drivingRecord
-                      ? `${selectedPile.drivingRecord.drivenLengthM} m (${(selectedPile.drivingRecord.drivenLengthM * 3.28084).toFixed(1)} ft)`
-                      : '-'}
-                  </span>
-                </div>
-
-                <div className="p-3 bg-slate-50 rounded-lg border border-slate-100">
-                  <span className="text-slate-400 block text-[10px] font-semibold">Last 10 Blows Set</span>
-                  <span className="font-bold text-slate-800 mt-0.5 block font-mono">
-                    {selectedPile.drivingRecord
-                      ? `${selectedPile.drivingRecord.measuredLast10Cm} cm (เกณฑ์ &le; ${selectedPile.criteria?.targetSet10BlowsCm || 2.5} cm)`
-                      : '-'}
-                  </span>
-                </div>
-              </div>
-
-              {/* QC Status if available */}
-              {selectedPile.qcInspection && (
-                <div className="p-3 rounded-lg bg-slate-50 border border-slate-100 flex items-center justify-between">
-                  <span className="font-semibold text-slate-600">ผลตรวจสอบ QC เยื้องศูนย์:</span>
-                  <span
-                    className={`font-black px-2 py-0.5 rounded text-[10px] ${
-                      selectedPile.qcInspection.deviationStatus === 'NORMAL'
-                        ? 'bg-emerald-100 text-emerald-800'
-                        : selectedPile.qcInspection.deviationStatus === 'WARNING'
-                        ? 'bg-amber-100 text-amber-800'
-                        : 'bg-rose-100 text-rose-800'
-                    }`}
-                  >
-                    เยื้อง {selectedPile.qcInspection.netDeviationCm} cm ({selectedPile.qcInspection.deviationStatus})
-                  </span>
-                </div>
-              )}
-
-              {/* Actions Footer */}
-              <div className="pt-3 border-t border-slate-100 flex items-center justify-between gap-2">
-                <div className="flex items-center gap-2">
-                  <Link
-                    href={`/piles/${selectedPile.id}/drive`}
-                    className="inline-flex items-center gap-1.5 bg-amber-500 hover:bg-amber-600 text-slate-950 px-3 py-2 rounded-lg font-bold transition shadow-xs"
-                  >
-                    <HardHat className="w-3.5 h-3.5" />
-                    <span>{selectedPile.drivingRecord ? 'แก้ไขผลการตอก' : 'บันทึกการตอก'}</span>
-                  </Link>
-
-                  <Link
-                    href={`/piles/${selectedPile.id}/qc`}
-                    className="inline-flex items-center gap-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 px-3 py-2 rounded-lg font-bold transition"
-                  >
-                    <ShieldCheck className="w-3.5 h-3.5" />
-                    <span>ตรวจ QC</span>
-                  </Link>
-
-                  <button
-                    type="button"
-                    onClick={() => handleOpenEdit(selectedPile)}
-                    className="inline-flex items-center gap-1.5 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 px-3 py-2 rounded-lg font-bold transition border border-indigo-200"
-                  >
-                    <Edit3 className="w-3.5 h-3.5" />
-                    <span>แก้ไขข้อมูล</span>
-                  </button>
-                </div>
-
-                <DeletePileButton
-                  pileId={selectedPile.id}
-                  pileNo={selectedPile.pileNo}
-                  onDeleted={() => {
-                    setSelectedPile(null);
-                    router.refresh();
-                  }}
-                />
-              </div>
-            </div>
-          </div>
-        </div>
+        <PileDetailModal
+          pile={selectedPile}
+          onClose={() => setSelectedPile(null)}
+          onOpenEdit={handleOpenEdit}
+        />
       )}
 
       {/* 5. Batch Generation Modal */}

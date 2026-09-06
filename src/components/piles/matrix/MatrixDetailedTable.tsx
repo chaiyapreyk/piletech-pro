@@ -11,6 +11,7 @@ import {
   Edit3,
   CheckSquare,
   Square,
+  Eye,
 } from 'lucide-react';
 import { PileData } from './matrixTypes';
 import { calculateAverageBlows } from '@/lib/calculations/drivingLog';
@@ -240,6 +241,18 @@ export default function MatrixDetailedTable({
                     )}
                   </td>
                   <td className="p-3.5 text-right space-x-1.5 whitespace-nowrap">
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setSelectedPile(pile);
+                      }}
+                      className="inline-flex items-center gap-1 bg-slate-900 hover:bg-slate-800 text-white px-2.5 py-1.5 rounded-md text-[11px] font-bold shadow-xs cursor-pointer"
+                      title="ดูข้อมูลและกราฟการตอก (View Data & Load Profile)"
+                    >
+                      <Eye className="w-3 h-3 text-amber-400" />
+                      <span>ดูข้อมูล</span>
+                    </button>
                     <Link
                       href={`/piles/${pile.id}/drive`}
                       onClick={(e) => e.stopPropagation()}

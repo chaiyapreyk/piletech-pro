@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { prisma } from '@/lib/db';
-import { DELETE as deleteProjectHandler } from '@/app/api/projects/[id]/route';
+import { DELETE as deleteProjectHandler, PATCH as updateProjectHandler } from '@/app/api/projects/[id]/route';
 import { PATCH as updatePileHandler } from '@/app/api/piles/[id]/route';
 import { PATCH as batchUpdatePileHandler } from '@/app/api/piles/batch/route';
 
@@ -438,4 +438,70 @@ describe('Prisma Database & Seeding Verification', () => {
     // Clean up
     await prisma.pile.delete({ where: { id: testPile.id } });
   });
+
+  it('can edit project information with code uniqueness and inline validation', async () => {
+    // Create a temporary project for testing edits
+    const testProj = await prisma.project.create({
+      data: {
+        name: 'Project For Edit Test',
+        code: 'PROJ-EDIT-01',
+        location: 'Bangkok',
+        clientName: 'Original Client',
+        contractorName: 'Original Contractor',
+        consultantName: 'Original Consultant',
+      },
+    });
+
+    // 1. Successful update
+    const updateReq = new Request(`http://localhost/api/projects/${testProj.id}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        name: 'Project Edited Name',
+        code: 'PROJ-EDIT-01-MOD',
+        location: 'Samut Prakan',
+        clientName: 'New Client Co.',
+        contractorName: 'New Contractor Ltd.',
+        consultantName: 'New Consultant Ltd.',
+      }),
+    });
+    const res = await updateProjectHandler(updateReq, { params: Promise.resolve({ id: testProj.id }) });
+    const json = await res.json();
+
+    expect(res.status).toBe(200);
+    expect(json.name).toBe('Project Edited Name');
+    expect(json.code).toBe('PROJ-EDIT-01-MOD');
+    expect(json.location).toBe('Samut Prakan');
+    expect(json.clientName).toBe('New Client Co.');
+
+    // 2. Reject missing name or code
+    const invalidReq = new Request(`http://localhost/api/projects/${testProj.id}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        name: '',
+        code: 'SOME-CODE',
+      }),
+    });
+    const invalidRes = await updateProjectHandler(invalidReq, { params: Promise.resolve({ id: testProj.id }) });
+    expect(invalidRes.status).toBe(400);
+
+    // 3. Reject duplicate code (seeded GHT-2026)
+    const dupReq = new Request(`http://localhost/api/projects/${testProj.id}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        name: 'Project Test',
+        code: 'GHT-2026',
+      }),
+    });
+    const dupRes = await updateProjectHandler(dupReq, { params: Promise.resolve({ id: testProj.id }) });
+    expect(dupRes.status).toBe(400);
+    const dupJson = await dupRes.json();
+    expect(dupJson.error).toContain('มีอยู่ในระบบแล้ว');
+
+    // Clean up
+    await prisma.project.delete({ where: { id: testProj.id } });
+  });
 });
+
