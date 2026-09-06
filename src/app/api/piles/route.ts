@@ -41,7 +41,7 @@ export async function GET(request: Request) {
 export async function POST(request: Request) {
   try {
     const body = await request.json();
-    const { projectId, criteriaId, pileNo, gridLine } = body;
+    const { projectId, criteriaId, pileNo, gridLine, building } = body;
 
     if (!projectId || !pileNo || !gridLine) {
       return NextResponse.json({ error: 'Missing required fields' }, { status: 400 });
@@ -50,13 +50,16 @@ export async function POST(request: Request) {
     const newPile = await prisma.pile.create({
       data: {
         projectId,
-        criteriaId,
-        pileNo,
-        gridLine,
+        criteriaId: criteriaId || null,
+        pileNo: pileNo.trim(),
+        gridLine: gridLine.trim(),
+        building: building?.trim() || 'Building A',
         status: 'PLANNED',
       },
       include: {
         criteria: true,
+        drivingRecord: true,
+        qcInspection: true,
       },
     });
 

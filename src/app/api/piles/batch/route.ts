@@ -189,3 +189,74 @@ export async function DELETE(request: Request) {
     );
   }
 }
+
+export async function PATCH(request: Request) {
+  try {
+    const body = await request.json();
+    const { ids, criteriaId, building, status } = body;
+
+    if (!Array.isArray(ids) || ids.length === 0) {
+      return NextResponse.json(
+        { error: 'โปรดระบุรายการเสาเข็มที่ต้องการอัปเดต' },
+        { status: 400 }
+      );
+    }
+
+    const updateData: {
+      criteriaId?: string | null;
+      building?: string;
+      status?: string;
+    } = {};
+
+    if (criteriaId !== undefined) {
+      updateData.criteriaId = criteriaId || null;
+    }
+    if (building !== undefined && building.trim()) {
+      updateData.building = building.trim();
+    }
+    if (status !== undefined) {
+      updateData.status = status;
+    }
+
+    const res = await prisma.pile.updateMany({
+      where: { id: { in: ids } },
+      data: updateData,
+    });
+
+    // If criteriaId changed, re-evaluate isSetPassed for piles that have driving records
+    if (criteriaId !== undefined) {
+      if (criteriaId) {
+        const criteria = await prisma.drivingCriteria.findUnique({
+          where: { id: criteriaId },
+        });
+        if (criteria) {
+          const records = await prisma.drivingRecord.findMany({
+            where: { pileId: { in: ids } },
+          });
+          for (const rec of records) {
+            const isPassed = rec.measuredLast10Cm <= criteria.targetSet10BlowsCm;
+            if (isPassed !== rec.isSetPassed) {
+              await prisma.drivingRecord.update({
+                where: { id: rec.id },
+                data: { isSetPassed: isPassed },
+              });
+            }
+          }
+        }
+      }
+    }
+
+    return NextResponse.json({
+      success: true,
+      updatedCount: res.count,
+      message: `อัปเดตขนาดเข็มและข้อมูลสำเร็จ ${res.count} ต้น`,
+    });
+  } catch (error) {
+    console.error('Failed to batch update piles:', error);
+    return NextResponse.json(
+      { error: 'เกิดข้อผิดพลาดในการอัปเดตชุดเสาเข็ม' },
+      { status: 500 }
+    );
+  }
+}
+

@@ -1,4 +1,4 @@
-﻿import { describe, it, expect } from 'vitest';
+import { describe, it, expect } from 'vitest';
 import { calculateHiley, type HileyInput } from '../../src/lib/calculations/hiley';
 
 describe('Hiley Calculation Sheet & Criteria Verification', () => {
@@ -63,5 +63,44 @@ describe('Hiley Calculation Sheet & Criteria Verification', () => {
     expect(calculationSheet.targetSet10BlowsCm).toBe(7.44);
     expect(calculationSheet.pileSectionAreaCm2).toBe(484);
     expect(calculationSheet.pileLengthM).toBe(20.0);
+  });
+
+  it('correctly re-evaluates driving record pass/fail when pile criteria is changed to a tighter target set', () => {
+    // Pile driven with measured Last 10 Blows = 3.2 cm
+    const measuredLast10Cm = 3.2;
+
+    // Criteria A (Standard): Target S10 <= 3.5 cm
+    const criteriaA = { id: 'crit-a', targetSet10BlowsCm: 3.5 };
+    const passedUnderCriteriaA = measuredLast10Cm <= criteriaA.targetSet10BlowsCm;
+    expect(passedUnderCriteriaA).toBe(true);
+
+    // Engineer changes pile size / criteria to Criteria B (Higher Safe Load): Target S10 <= 2.8 cm
+    const criteriaB = { id: 'crit-b', targetSet10BlowsCm: 2.8 };
+    const passedUnderCriteriaB = measuredLast10Cm <= criteriaB.targetSet10BlowsCm;
+    expect(passedUnderCriteriaB).toBe(false); // Automatically becomes failed (Re-drive required)!
+  });
+
+  it('batch updates criteria for an array of piles maintaining individual measured set fidelity', () => {
+    const piles = [
+      { id: 'p-1', pileNo: 'P-01', criteriaId: 'crit-old', measuredLast10Cm: 2.0 },
+      { id: 'p-2', pileNo: 'P-02', criteriaId: 'crit-old', measuredLast10Cm: 3.0 },
+      { id: 'p-3', pileNo: 'P-03', criteriaId: 'crit-old', measuredLast10Cm: 4.5 },
+    ];
+
+    const newCriteria = { id: 'crit-new', targetSet10BlowsCm: 2.5 };
+
+    // Batch apply new criteria
+    const updatedPiles = piles.map((p) => ({
+      ...p,
+      criteriaId: newCriteria.id,
+      isSetPassed: p.measuredLast10Cm <= newCriteria.targetSet10BlowsCm,
+    }));
+
+    expect(updatedPiles[0].criteriaId).toBe('crit-new');
+    expect(updatedPiles[0].isSetPassed).toBe(true); // 2.0 <= 2.5 -> Pass
+    expect(updatedPiles[1].criteriaId).toBe('crit-new');
+    expect(updatedPiles[1].isSetPassed).toBe(false); // 3.0 > 2.5 -> Fail
+    expect(updatedPiles[2].criteriaId).toBe('crit-new');
+    expect(updatedPiles[2].isSetPassed).toBe(false); // 4.5 > 2.5 -> Fail
   });
 });

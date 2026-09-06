@@ -26,6 +26,7 @@ import {
   Building,
   Edit3,
   Save,
+  Loader2,
 } from 'lucide-react';
 import DeletePileButton from './DeletePileButton';
 
@@ -60,14 +61,30 @@ export interface PileData {
   } | null;
 }
 
+export interface ProjectCriteriaOption {
+  id: string;
+  name?: string | null;
+  pileType: string;
+  safeWorkingLoadT: number;
+  targetSet10BlowsCm: number;
+  dropHeightCm?: number;
+  hammerWeightT?: number;
+}
+
 interface PileNumberMatrixProps {
   initialPiles: PileData[];
   projectId?: string;
+  projectCriteria?: ProjectCriteriaOption[];
 }
 
-export default function PileNumberMatrix({ initialPiles, projectId }: PileNumberMatrixProps) {
+export default function PileNumberMatrix({
+  initialPiles,
+  projectId,
+  projectCriteria = [],
+}: PileNumberMatrixProps) {
   const router = useRouter();
   const [piles, setPiles] = useState<PileData[]>(initialPiles);
+  const [criteriaList, setCriteriaList] = useState<ProjectCriteriaOption[]>(projectCriteria);
   const [filterStatus, setFilterStatus] = useState<'ALL' | 'NOT_DRIVEN' | 'PASSED' | 'FAILED'>('ALL');
   const [filterBuilding, setFilterBuilding] = useState<string>('ALL');
   const [searchQuery, setSearchQuery] = useState('');
@@ -80,11 +97,17 @@ export default function PileNumberMatrix({ initialPiles, projectId }: PileNumber
   const [selectedPileIds, setSelectedPileIds] = useState<Set<string>>(new Set());
   const [isDeletingBulk, setIsDeletingBulk] = useState(false);
 
+  // Bulk Criteria Modal State
+  const [showBulkCriteriaModal, setShowBulkCriteriaModal] = useState(false);
+  const [bulkCriteriaId, setBulkCriteriaId] = useState<string>('');
+  const [isUpdatingBulkCriteria, setIsUpdatingBulkCriteria] = useState(false);
+
   // + Add Pile Modal State
   const [showAddModal, setShowAddModal] = useState(false);
   const [newPileNo, setNewPileNo] = useState('');
   const [newGridLine, setNewGridLine] = useState('');
   const [newBuilding, setNewBuilding] = useState('Building A');
+  const [newCriteriaId, setNewCriteriaId] = useState<string>(projectCriteria[0]?.id || '');
   const [isAddingPile, setIsAddingPile] = useState(false);
 
   // Edit Pile Modal State
@@ -93,6 +116,7 @@ export default function PileNumberMatrix({ initialPiles, projectId }: PileNumber
   const [editGridLine, setEditGridLine] = useState('');
   const [editBuilding, setEditBuilding] = useState('');
   const [editStatus, setEditStatus] = useState('');
+  const [editCriteriaId, setEditCriteriaId] = useState<string>('');
   const [isSavingEdit, setIsSavingEdit] = useState(false);
 
   // Batch Generator Modal State
@@ -100,6 +124,7 @@ export default function PileNumberMatrix({ initialPiles, projectId }: PileNumber
   const [batchCount, setBatchCount] = useState('300');
   const [batchPrefix, setBatchPrefix] = useState('P-');
   const [batchBuilding, setBatchBuilding] = useState('Building A');
+  const [batchCriteriaId, setBatchCriteriaId] = useState<string>(projectCriteria[0]?.id || '');
   const [isSubmittingBatch, setIsSubmittingBatch] = useState(false);
   const [batchFeedback, setBatchFeedback] = useState<string | null>(null);
 
@@ -107,6 +132,30 @@ export default function PileNumberMatrix({ initialPiles, projectId }: PileNumber
   React.useEffect(() => {
     setPiles(initialPiles);
   }, [initialPiles]);
+
+  React.useEffect(() => {
+    if (projectCriteria && projectCriteria.length > 0) {
+      setCriteriaList(projectCriteria);
+      if (!newCriteriaId) setNewCriteriaId(projectCriteria[0].id);
+      if (!batchCriteriaId) setBatchCriteriaId(projectCriteria[0].id);
+    }
+  }, [projectCriteria]);
+
+  // Fallback fetch if criteriaList is empty
+  React.useEffect(() => {
+    if ((!criteriaList || criteriaList.length === 0) && projectId) {
+      fetch(`/api/criteria?projectId=${projectId}`)
+        .then((r) => r.json())
+        .then((data) => {
+          if (Array.isArray(data) && data.length > 0) {
+            setCriteriaList(data);
+            setNewCriteriaId((prev) => prev || data[0].id);
+            setBatchCriteriaId((prev) => prev || data[0].id);
+          }
+        })
+        .catch(() => {});
+    }
+  }, [projectId]);
 
   // Calculations & KPIs
   const totalCount = piles.length;
@@ -238,6 +287,7 @@ export default function PileNumberMatrix({ initialPiles, projectId }: PileNumber
     setEditGridLine(pile.gridLine);
     setEditBuilding(pile.building || 'Building A');
     setEditStatus(pile.status);
+    setEditCriteriaId(pile.criteriaId || pile.criteria?.id || criteriaList[0]?.id || '');
     setIsEditingPile(true);
   };
 
@@ -256,6 +306,7 @@ export default function PileNumberMatrix({ initialPiles, projectId }: PileNumber
           gridLine: editGridLine,
           building: editBuilding,
           status: editStatus,
+          criteriaId: editCriteriaId || null,
         }),
       });
 
@@ -297,14 +348,16 @@ export default function PileNumberMatrix({ initialPiles, projectId }: PileNumber
         currentProject = projects[0];
       }
 
-      if (!currentProject) throw new Error('No project found');
+      if (!currentProject && !projectId) throw new Error('No project found');
+
+      const targetCriteriaId = newCriteriaId || criteriaList[0]?.id || currentProject?.criteria?.[0]?.id || null;
 
       const res = await fetch('/api/piles', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          projectId: currentProject.id,
-          criteriaId: currentProject.criteria?.[0]?.id || null,
+          projectId: currentProject?.id || projectId,
+          criteriaId: targetCriteriaId,
           pileNo: newPileNo.trim(),
           gridLine: newGridLine.trim(),
           building: newBuilding.trim(),
@@ -430,6 +483,7 @@ export default function PileNumberMatrix({ initialPiles, projectId }: PileNumber
           totalCount: count,
           prefix: batchPrefix || 'P-',
           building: batchBuilding || 'Building A',
+          criteriaId: batchCriteriaId || (criteriaList[0]?.id || null),
           projectId: targetProjectId,
         }),
       });
@@ -451,6 +505,70 @@ export default function PileNumberMatrix({ initialPiles, projectId }: PileNumber
       setIsSubmittingBatch(false);
     }
   };
+
+  // Handle bulk change criteria for selected piles
+  const handleBulkChangeCriteria = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (selectedPileIds.size === 0) return;
+
+    try {
+      setIsUpdatingBulkCriteria(true);
+      const res = await fetch('/api/piles/batch', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          ids: Array.from(selectedPileIds),
+          criteriaId: bulkCriteriaId || null,
+        }),
+      });
+
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Failed to update piles');
+
+      const targetCriteria = criteriaList.find((c) => c.id === bulkCriteriaId) || null;
+      setPiles((prev) =>
+        prev.map((p) =>
+          selectedPileIds.has(p.id)
+            ? {
+                ...p,
+                criteriaId: bulkCriteriaId || null,
+                criteria: targetCriteria
+                  ? {
+                      id: targetCriteria.id,
+                      name: targetCriteria.name,
+                      pileType: targetCriteria.pileType,
+                      safeWorkingLoadT: targetCriteria.safeWorkingLoadT,
+                      targetSet10BlowsCm: targetCriteria.targetSet10BlowsCm,
+                    }
+                  : null,
+              }
+            : p
+        )
+      );
+
+      setShowBulkCriteriaModal(false);
+      setIsBulkMode(false);
+      setSelectedPileIds(new Set());
+      router.refresh();
+    } catch (err: any) {
+      alert(err.message);
+    } finally {
+      setIsUpdatingBulkCriteria(false);
+    }
+  };
+
+  const selectedNewCriteria = useMemo(
+    () => criteriaList.find((c) => c.id === newCriteriaId),
+    [criteriaList, newCriteriaId]
+  );
+  const selectedEditCriteria = useMemo(
+    () => criteriaList.find((c) => c.id === editCriteriaId),
+    [criteriaList, editCriteriaId]
+  );
+  const selectedBulkCriteria = useMemo(
+    () => criteriaList.find((c) => c.id === bulkCriteriaId),
+    [criteriaList, bulkCriteriaId]
+  );
 
   return (
     <div className="space-y-6">
@@ -648,7 +766,7 @@ export default function PileNumberMatrix({ initialPiles, projectId }: PileNumber
               <span>+ เพิ่มเสาเข็ม</span>
             </button>
 
-            {/* Bulk Delete Toggle Button */}
+            {/* Bulk Delete & Criteria Toggle Button */}
             <button
               type="button"
               onClick={() => {
@@ -657,12 +775,12 @@ export default function PileNumberMatrix({ initialPiles, projectId }: PileNumber
               }}
               className={`inline-flex items-center gap-1 px-3 py-1.5 rounded-lg text-xs font-bold border transition ${
                 isBulkMode
-                  ? 'bg-rose-50 border-rose-300 text-rose-700 shadow-xs'
+                  ? 'bg-amber-50 border-amber-300 text-amber-900 shadow-xs ring-1 ring-amber-400'
                   : 'bg-white border-slate-200 text-slate-700 hover:bg-slate-50'
               }`}
             >
-              <Trash2 className="w-3.5 h-3.5" />
-              <span>{isBulkMode ? 'ปิดจัดการลบ' : 'ลบแบบกลุ่ม'}</span>
+              <CheckSquare className="w-3.5 h-3.5 text-amber-600" />
+              <span>{isBulkMode ? 'ปิดโหมดเลือกกลุ่ม' : 'จัดการแบบกลุ่ม'}</span>
             </button>
 
             {/* Batch Setup Button */}
@@ -725,14 +843,14 @@ export default function PileNumberMatrix({ initialPiles, projectId }: PileNumber
 
         {/* Bulk Action Sub-bar when isBulkMode is Active */}
         {isBulkMode && (
-          <div className="bg-rose-50/70 border border-rose-200 rounded-xl p-3 flex flex-wrap items-center justify-between gap-2 animate-in fade-in">
-            <div className="flex items-center gap-2 text-xs font-bold text-rose-900">
-              <CheckSquare className="w-4 h-4 text-rose-600" />
-              <span>โหมดลบแบบกลุ่ม: เลือกแล้ว {selectedPileIds.size} ต้น</span>
+          <div className="bg-slate-900 text-white rounded-xl p-3 flex flex-wrap items-center justify-between gap-3 shadow-md animate-in fade-in">
+            <div className="flex items-center gap-2 text-xs font-bold">
+              <CheckSquare className="w-4 h-4 text-amber-400" />
+              <span>เลือกเสาเข็มแล้ว: <span className="text-amber-400 font-mono text-sm">{selectedPileIds.size}</span> ต้น</span>
               <button
                 type="button"
                 onClick={handleSelectAllFiltered}
-                className="underline text-indigo-700 hover:text-indigo-900 ml-2"
+                className="underline text-indigo-300 hover:text-white ml-2 text-[11px]"
               >
                 เลือกทั้งหมด ({filteredPiles.length})
               </button>
@@ -740,7 +858,7 @@ export default function PileNumberMatrix({ initialPiles, projectId }: PileNumber
                 <button
                   type="button"
                   onClick={handleDeselectAll}
-                  className="underline text-slate-600 hover:text-slate-800"
+                  className="underline text-slate-400 hover:text-white text-[11px]"
                 >
                   ยกเลิกเลือก
                 </button>
@@ -748,6 +866,19 @@ export default function PileNumberMatrix({ initialPiles, projectId }: PileNumber
             </div>
 
             <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={() => {
+                  setBulkCriteriaId(criteriaList[0]?.id || '');
+                  setShowBulkCriteriaModal(true);
+                }}
+                disabled={selectedPileIds.size === 0}
+                className="inline-flex items-center gap-1.5 bg-amber-500 hover:bg-amber-600 text-slate-950 px-3 py-1.5 rounded-lg text-xs font-bold transition disabled:opacity-40 shadow-xs"
+              >
+                <Layers className="w-3.5 h-3.5" />
+                <span>เปลี่ยนขนาดเข็ม ({selectedPileIds.size})</span>
+              </button>
+
               <button
                 type="button"
                 onClick={handleDeleteSelected}
@@ -762,7 +893,7 @@ export default function PileNumberMatrix({ initialPiles, projectId }: PileNumber
                 type="button"
                 onClick={handleDeleteAllPending}
                 disabled={notDrivenCount === 0 || isDeletingBulk}
-                className="inline-flex items-center gap-1 bg-slate-800 hover:bg-slate-900 text-white px-3 py-1.5 rounded-lg text-xs font-bold transition disabled:opacity-40"
+                className="inline-flex items-center gap-1 bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-700 px-3 py-1.5 rounded-lg text-xs font-bold transition disabled:opacity-40"
               >
                 <span>ลบที่ยังไม่ตอกทั้งหมด ({notDrivenCount})</span>
               </button>
@@ -1055,9 +1186,18 @@ export default function PileNumberMatrix({ initialPiles, projectId }: PileNumber
               <div className="grid grid-cols-2 gap-2">
                 <div className="p-3 bg-slate-50 rounded-lg border border-slate-100">
                   <span className="text-slate-400 block text-[10px] font-semibold">ประเภทเสาเข็ม / สเปกคำนวณ</span>
-                  <span className="font-bold text-slate-800 mt-0.5 block truncate" title={selectedPile.criteria?.name || selectedPile.criteria?.pileType}>
-                    {selectedPile.criteria?.name || selectedPile.criteria?.pileType || 'I-Section 0.26m'}
-                  </span>
+                  <div className="flex items-center justify-between gap-1 mt-0.5">
+                    <span className="font-bold text-slate-800 truncate" title={selectedPile.criteria?.name || selectedPile.criteria?.pileType}>
+                      {selectedPile.criteria?.name || selectedPile.criteria?.pileType || 'ยังไม่กำหนดสเปก'}
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => handleOpenEdit(selectedPile)}
+                      className="text-[10px] text-indigo-600 hover:text-indigo-800 font-bold hover:underline whitespace-nowrap"
+                    >
+                      [เปลี่ยนขนาด]
+                    </button>
+                  </div>
                   {selectedPile.criteria?.id && (
                     <Link
                       href={`/calculator?criteriaId=${selectedPile.criteria.id}`}
@@ -1260,6 +1400,37 @@ export default function PileNumberMatrix({ initialPiles, projectId }: PileNumber
                 )}
               </div>
 
+              <div>
+                <label className="block text-xs font-bold text-slate-700 mb-1 flex items-center justify-between">
+                  <span>ขนาดเสาเข็ม / รายการคำนวณสำหรับชุดนี้ (Pile Size & Criteria)</span>
+                  <Link
+                    href="/calculator"
+                    target="_blank"
+                    className="text-[11px] text-indigo-600 hover:text-indigo-800 hover:underline font-normal"
+                  >
+                    + จัดการในสูตร Hiley
+                  </Link>
+                </label>
+                {criteriaList.length > 0 ? (
+                  <select
+                    value={batchCriteriaId}
+                    onChange={(e) => setBatchCriteriaId(e.target.value)}
+                    className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-xs font-bold focus:bg-white focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                  >
+                    {criteriaList.map((crit) => (
+                      <option key={crit.id} value={crit.id}>
+                        {crit.name || crit.pileType} (Ra: {crit.safeWorkingLoadT}t, S₁₀ ≤ {crit.targetSet10BlowsCm}cm)
+                      </option>
+                    ))}
+                    <option value="">-- ยังไม่ระบุสเปก (Unassigned) --</option>
+                  </select>
+                ) : (
+                  <p className="text-[11px] text-slate-500 bg-slate-50 p-2.5 rounded-lg border border-slate-200">
+                    ยังไม่มีรายการคำนวณในโครงการ สามารถกำหนดในภายหลังได้
+                  </p>
+                )}
+              </div>
+
               {batchFeedback && (
                 <div className="p-3 bg-emerald-50 border border-emerald-200 rounded-lg text-xs font-bold text-emerald-800 animate-in fade-in">
                   ✅ {batchFeedback}
@@ -1347,6 +1518,61 @@ export default function PileNumberMatrix({ initialPiles, projectId }: PileNumber
                   placeholder="เช่น Building A, Zone East"
                 />
               </div>
+
+              <div>
+                <div className="flex items-center justify-between mb-1">
+                  <label className="block text-xs font-bold text-slate-700">
+                    ขนาดเสาเข็ม / รายการคำนวณ (Pile Size & Criteria)
+                  </label>
+                  <Link
+                    href="/calculator"
+                    target="_blank"
+                    className="text-[11px] text-amber-700 hover:text-amber-800 hover:underline font-semibold inline-flex items-center gap-0.5"
+                  >
+                    + ไปจัดการในสูตร Hiley
+                  </Link>
+                </div>
+                {criteriaList.length > 0 ? (
+                  <select
+                    value={newCriteriaId}
+                    onChange={(e) => setNewCriteriaId(e.target.value)}
+                    className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-xs font-bold focus:bg-white focus:outline-none focus:ring-2 focus:ring-amber-500"
+                  >
+                    {criteriaList.map((crit) => (
+                      <option key={crit.id} value={crit.id}>
+                        {crit.name || crit.pileType} (Ra: {crit.safeWorkingLoadT}t, S₁₀ ≤ {crit.targetSet10BlowsCm}cm)
+                      </option>
+                    ))}
+                    <option value="">-- ยังไม่กำหนดสเปก (Unassigned) --</option>
+                  </select>
+                ) : (
+                  <div className="p-2.5 bg-amber-50 border border-amber-200 rounded-lg text-[11px] text-amber-900">
+                    ยังไม่มีรายการคำนวณในโครงการนี้{' '}
+                    <Link href="/calculator" className="underline font-bold text-amber-800">
+                      คลิกที่นี่เพื่อไปตั้งค่าสูตร Hiley
+                    </Link>
+                  </div>
+                )}
+              </div>
+
+              {selectedNewCriteria && (
+                <div className="p-2.5 bg-amber-50/70 border border-amber-200/80 rounded-lg flex items-center justify-between text-[11px]">
+                  <div>
+                    <span className="text-slate-500 block text-[10px]">Safe Load (Ra)</span>
+                    <span className="font-bold text-slate-900">{selectedNewCriteria.safeWorkingLoadT} ตัน</span>
+                  </div>
+                  <div>
+                    <span className="text-slate-500 block text-[10px]">Target Set (S₁₀)</span>
+                    <span className="font-bold text-amber-700 font-mono">≤ {selectedNewCriteria.targetSet10BlowsCm} cm</span>
+                  </div>
+                  <div>
+                    <span className="text-slate-500 block text-[10px]">Drop / Hammer</span>
+                    <span className="font-bold text-slate-700 font-mono">
+                      {selectedNewCriteria.dropHeightCm}cm / {selectedNewCriteria.hammerWeightT}t
+                    </span>
+                  </div>
+                </div>
+              )}
 
               <div className="pt-2 flex items-center justify-end gap-2">
                 <button
@@ -1444,6 +1670,58 @@ export default function PileNumberMatrix({ initialPiles, projectId }: PileNumber
                 </select>
               </div>
 
+              <div>
+                <div className="flex items-center justify-between mb-1">
+                  <label className="block text-xs font-bold text-slate-700">
+                    ขนาดเสาเข็ม / รายการคำนวณ (Pile Size & Criteria)
+                  </label>
+                  <Link
+                    href="/calculator"
+                    target="_blank"
+                    className="text-[11px] text-indigo-600 hover:text-indigo-800 hover:underline font-semibold"
+                  >
+                    + ไปจัดการในสูตร Hiley
+                  </Link>
+                </div>
+                {criteriaList.length > 0 ? (
+                  <select
+                    value={editCriteriaId}
+                    onChange={(e) => setEditCriteriaId(e.target.value)}
+                    className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-xs font-bold focus:bg-white focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                  >
+                    {criteriaList.map((crit) => (
+                      <option key={crit.id} value={crit.id}>
+                        {crit.name || crit.pileType} (Ra: {crit.safeWorkingLoadT}t, S₁₀ ≤ {crit.targetSet10BlowsCm}cm)
+                      </option>
+                    ))}
+                    <option value="">-- ไม่ระบุสเปก (Unassigned) --</option>
+                  </select>
+                ) : (
+                  <p className="text-[11px] text-slate-500">
+                    ยังไม่มีรายการคำนวณในโครงการ
+                  </p>
+                )}
+              </div>
+
+              {selectedEditCriteria && (
+                <div className="p-2.5 bg-indigo-50/70 border border-indigo-100 rounded-lg flex items-center justify-between text-[11px]">
+                  <div>
+                    <span className="text-slate-400 block text-[10px]">Safe Load (Ra)</span>
+                    <span className="font-bold text-indigo-950">{selectedEditCriteria.safeWorkingLoadT} ตัน</span>
+                  </div>
+                  <div>
+                    <span className="text-slate-400 block text-[10px]">Target Set (S₁₀)</span>
+                    <span className="font-bold text-amber-600 font-mono">≤ {selectedEditCriteria.targetSet10BlowsCm} cm</span>
+                  </div>
+                  <div>
+                    <span className="text-slate-400 block text-[10px]">Drop / Hammer</span>
+                    <span className="font-bold text-slate-700 font-mono">
+                      {selectedEditCriteria.dropHeightCm}cm / {selectedEditCriteria.hammerWeightT}t
+                    </span>
+                  </div>
+                </div>
+              )}
+
               <div className="pt-2 flex items-center justify-end gap-2">
                 <button
                   type="button"
@@ -1460,6 +1738,108 @@ export default function PileNumberMatrix({ initialPiles, projectId }: PileNumber
                 >
                   <Save className="w-3.5 h-3.5" />
                   <span>{isSavingEdit ? 'กำลังบันทึก...' : 'บันทึกการแก้ไข'}</span>
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* 8. Bulk Criteria Assignment Modal */}
+      {showBulkCriteriaModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs animate-in fade-in duration-150">
+          <div className="bg-white rounded-2xl shadow-xl border border-slate-200 w-full max-w-md overflow-hidden animate-in zoom-in-95 duration-150">
+            <div className="bg-amber-500 text-slate-950 p-4 flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <Layers className="w-5 h-5" />
+                <h3 className="text-base font-black">
+                  เปลี่ยนขนาดเสาเข็มที่เลือก ({selectedPileIds.size} ต้น)
+                </h3>
+              </div>
+              <button
+                onClick={() => setShowBulkCriteriaModal(false)}
+                className="text-slate-800 hover:text-slate-950 p-1 rounded-lg"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <form onSubmit={handleBulkChangeCriteria} className="p-5 space-y-4">
+              <p className="text-xs text-slate-600 leading-relaxed">
+                กำหนดขนาดเสาเข็มและสเปกการคำนวณ Target Set ($S_{10}$) ให้กับเสาเข็มที่เลือกทั้ง{' '}
+                <strong>{selectedPileIds.size} ต้น</strong> พร้อมกันทันที
+              </p>
+
+              <div>
+                <div className="flex items-center justify-between mb-1">
+                  <label className="block text-xs font-bold text-slate-700">
+                    เลือกขนาดเสาเข็ม / รายการคำนวณใหม่
+                  </label>
+                  <Link
+                    href="/calculator"
+                    target="_blank"
+                    className="text-[11px] text-amber-700 hover:text-amber-800 hover:underline font-semibold"
+                  >
+                    + ไปจัดการในสูตร Hiley
+                  </Link>
+                </div>
+                {criteriaList.length > 0 ? (
+                  <select
+                    value={bulkCriteriaId}
+                    onChange={(e) => setBulkCriteriaId(e.target.value)}
+                    className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-xs font-bold focus:bg-white focus:outline-none focus:ring-2 focus:ring-amber-500"
+                  >
+                    {criteriaList.map((crit) => (
+                      <option key={crit.id} value={crit.id}>
+                        {crit.name || crit.pileType} (Ra: {crit.safeWorkingLoadT}t, S₁₀ ≤ {crit.targetSet10BlowsCm}cm)
+                      </option>
+                    ))}
+                    <option value="">-- ไม่ระบุสเปก (Unassigned) --</option>
+                  </select>
+                ) : (
+                  <p className="text-[11px] text-slate-500">
+                    ยังไม่มีรายการคำนวณในโครงการ
+                  </p>
+                )}
+              </div>
+
+              {selectedBulkCriteria && (
+                <div className="p-3 bg-amber-50/80 border border-amber-200 rounded-xl space-y-1.5 text-xs">
+                  <span className="font-bold text-amber-900 block">สรุปสเปกที่จะนำไปใช้:</span>
+                  <div className="grid grid-cols-2 gap-2 text-[11px] text-slate-700">
+                    <div>• หน้าตัด: <strong>{selectedBulkCriteria.name || selectedBulkCriteria.pileType}</strong></div>
+                    <div>• Safe Load: <strong>{selectedBulkCriteria.safeWorkingLoadT} ตัน</strong></div>
+                    <div>• เกณฑ์ Set: <strong>≤ {selectedBulkCriteria.targetSet10BlowsCm} cm</strong></div>
+                    <div>• ตุ้ม / ระยะตก: <strong>{selectedBulkCriteria.hammerWeightT}t / {selectedBulkCriteria.dropHeightCm}cm</strong></div>
+                  </div>
+                </div>
+              )}
+
+              <div className="pt-2 flex items-center justify-end gap-2 border-t border-slate-100">
+                <button
+                  type="button"
+                  onClick={() => setShowBulkCriteriaModal(false)}
+                  disabled={isUpdatingBulkCriteria}
+                  className="px-4 py-2 rounded-lg text-xs font-bold text-slate-600 hover:bg-slate-100 transition"
+                >
+                  ยกเลิก
+                </button>
+                <button
+                  type="submit"
+                  disabled={isUpdatingBulkCriteria}
+                  className="px-4 py-2 rounded-lg text-xs font-bold bg-amber-500 hover:bg-amber-600 text-slate-950 transition shadow-sm disabled:opacity-50 inline-flex items-center gap-1.5"
+                >
+                  {isUpdatingBulkCriteria ? (
+                    <>
+                      <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                      <span>กำลังอัปเดต...</span>
+                    </>
+                  ) : (
+                    <>
+                      <CheckSquare className="w-3.5 h-3.5" />
+                      <span>ยืนยันเปลี่ยนขนาดเข็ม ({selectedPileIds.size} ต้น)</span>
+                    </>
+                  )}
                 </button>
               </div>
             </form>

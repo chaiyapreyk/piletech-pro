@@ -52,7 +52,11 @@ export default async function PilesListPage() {
       </div>
 
       {/* Interactive Number Matrix Grid */}
-      <PileNumberMatrix initialPiles={piles} projectId={project?.id} />
+      <PileNumberMatrix
+        initialPiles={piles}
+        projectId={project?.id}
+        projectCriteria={project?.criteria ? JSON.parse(JSON.stringify(project.criteria)) : []}
+      />
 
       {/* Detailed Piles Table Section Header */}
       <div className="pt-2">

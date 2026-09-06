@@ -1,6 +1,8 @@
 import { describe, it, expect } from 'vitest';
 import { prisma } from '@/lib/db';
 import { DELETE as deleteProjectHandler } from '@/app/api/projects/[id]/route';
+import { PATCH as updatePileHandler } from '@/app/api/piles/[id]/route';
+import { PATCH as batchUpdatePileHandler } from '@/app/api/piles/batch/route';
 
 describe('Prisma Database & Seeding Verification', () => {
   it('loads the seeded project and settings', async () => {
@@ -355,5 +357,85 @@ describe('Prisma Database & Seeding Verification', () => {
 
     const checkQC = await prisma.qCInspection.findUnique({ where: { pileId } });
     expect(checkQC).toBeNull();
+  });
+
+  it('can specify criteria when creating pile, update criteria, and batch update criteria with isSetPassed re-evaluation', async () => {
+    const project = await prisma.project.findFirst({
+      include: { criteria: true },
+    });
+    if (!project || project.criteria.length < 2) throw new Error('Need project with at least 2 criteria');
+
+    const crit1 = project.criteria[0]; // e.g. target S10 = 7.44
+    const crit2 = project.criteria[1]; // e.g. target S10 = 5.0 (or vice versa)
+
+    // 1. Create pile with crit1
+    const testPile = await prisma.pile.create({
+      data: {
+        projectId: project.id,
+        criteriaId: crit1.id,
+        pileNo: 'TEST-CRIT-01',
+        gridLine: 'Z-1',
+        building: 'Building A',
+        status: 'DRIVEN',
+        drivingRecord: {
+          create: {
+            penetrationBlows: JSON.stringify([20, 25]),
+            measuredLast10Cm: 6.0,
+            drivenLengthM: 20.0,
+            isSetPassed: 6.0 <= crit1.targetSet10BlowsCm,
+          },
+        },
+      },
+      include: {
+        criteria: true,
+        drivingRecord: true,
+      },
+    });
+
+    expect(testPile.criteriaId).toBe(crit1.id);
+    expect(testPile.drivingRecord?.isSetPassed).toBe(6.0 <= crit1.targetSet10BlowsCm);
+
+    // 2. Test updating criteria via PATCH /api/piles/[id]
+    const updateReq = new Request(`http://localhost/api/piles/${testPile.id}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        criteriaId: crit2.id,
+        pileNo: 'TEST-CRIT-01-MOD',
+      }),
+    });
+    const updateRes = await updatePileHandler(updateReq, { params: Promise.resolve({ id: testPile.id }) });
+    const updateJson = await updateRes.json();
+
+    expect(updateRes.status).toBe(200);
+    expect(updateJson.pile.criteriaId).toBe(crit2.id);
+    expect(updateJson.pile.pileNo).toBe('TEST-CRIT-01-MOD');
+    // Check auto re-evaluation of isSetPassed
+    expect(updateJson.pile.drivingRecord.isSetPassed).toBe(6.0 <= crit2.targetSet10BlowsCm);
+
+    // 3. Test batch update criteria via PATCH /api/piles/batch
+    const batchReq = new Request('http://localhost/api/piles/batch', {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        ids: [testPile.id],
+        criteriaId: crit1.id,
+      }),
+    });
+    const batchRes = await batchUpdatePileHandler(batchReq);
+    const batchJson = await batchRes.json();
+
+    expect(batchRes.status).toBe(200);
+    expect(batchJson.updatedCount).toBe(1);
+
+    const reloaded = await prisma.pile.findUnique({
+      where: { id: testPile.id },
+      include: { criteria: true, drivingRecord: true },
+    });
+    expect(reloaded?.criteriaId).toBe(crit1.id);
+    expect(reloaded?.drivingRecord?.isSetPassed).toBe(6.0 <= crit1.targetSet10BlowsCm);
+
+    // Clean up
+    await prisma.pile.delete({ where: { id: testPile.id } });
   });
 });

@@ -75,6 +75,7 @@ export async function PATCH(
 
     const existing = await prisma.pile.findUnique({
       where: { id },
+      include: { drivingRecord: true },
     });
     if (!existing) {
       return NextResponse.json({ error: 'Pile not found' }, { status: 404 });
@@ -83,10 +84,10 @@ export async function PATCH(
     const updated = await prisma.pile.update({
       where: { id },
       data: {
-        ...(pileNo && { pileNo }),
-        ...(gridLine && { gridLine }),
-        ...(criteriaId !== undefined && { criteriaId }),
-        ...(building && { building }),
+        ...(pileNo && { pileNo: pileNo.trim() }),
+        ...(gridLine && { gridLine: gridLine.trim() }),
+        ...(criteriaId !== undefined && { criteriaId: criteriaId || null }),
+        ...(building && { building: building.trim() }),
         ...(status && { status }),
       },
       include: {
@@ -95,6 +96,26 @@ export async function PATCH(
         qcInspection: true,
       },
     });
+
+    // If criteria changed and pile already has a driving record, re-evaluate isSetPassed!
+    if (criteriaId !== undefined && criteriaId !== existing.criteriaId && existing.drivingRecord) {
+      let isSetPassed = existing.drivingRecord.isSetPassed;
+      if (criteriaId) {
+        const newCriteria = await prisma.drivingCriteria.findUnique({
+          where: { id: criteriaId },
+        });
+        if (newCriteria) {
+          isSetPassed = existing.drivingRecord.measuredLast10Cm <= newCriteria.targetSet10BlowsCm;
+        }
+      }
+      const updatedRecord = await prisma.drivingRecord.update({
+        where: { pileId: id },
+        data: { isSetPassed },
+      });
+      if (updated.drivingRecord) {
+        updated.drivingRecord.isSetPassed = updatedRecord.isSetPassed;
+      }
+    }
 
     return NextResponse.json({
       success: true,
