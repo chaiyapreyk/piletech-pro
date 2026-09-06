@@ -166,7 +166,7 @@ export default function ReportExporter({
                 <th className="p-2">Grid</th>
                 <th className="p-2">สเปกเข็ม</th>
                 <th className="p-2 text-center">Safe Load</th>
-                <th className="p-2 text-center">Rate (m/ft)</th>
+                <th className="p-2 text-center">Rate (ft/m)</th>
                 <th className="p-2 text-center">Target S10</th>
                 <th className="p-2 text-center">Measured S10</th>
                 <th className="p-2 text-center">Set Status</th>
@@ -182,7 +182,7 @@ export default function ReportExporter({
                   <td className="p-2 font-sans text-slate-600">{r.pileType}</td>
                   <td className="p-2 text-center">{r.safeWorkingLoadT} T</td>
                   <td className="p-2 text-center font-bold text-amber-700">
-                    {r.avgBlowsPerMeter ? `${r.avgBlowsPerMeter} / ${r.avgBlowsPerFoot}ft` : '-'}
+                    {r.avgBlowsPerFoot ? `${r.avgBlowsPerFoot} blw/ft (${r.avgBlowsPerMeter} m)` : '-'}
                   </td>
                   <td className="p-2 text-center">{r.targetSet10BlowsCm} cm</td>
                   <td className="p-2 text-center font-bold">

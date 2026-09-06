@@ -3,6 +3,7 @@ import Link from 'next/link';
 import { HardHat, ShieldCheck, CheckCircle2, AlertCircle, Clock, Plus, ChevronRight, Building2 } from 'lucide-react';
 import DeletePileButton from '@/components/piles/DeletePileButton';
 import PileNumberMatrix from '@/components/piles/PileNumberMatrix';
+import { calculateAverageBlows } from '@/lib/calculations/drivingLog';
 
 export const dynamic = 'force-dynamic';
 
@@ -73,7 +74,7 @@ export default async function PilesListPage() {
                 <th className="p-3.5 font-bold">Grid Line</th>
                 <th className="p-3.5 font-bold">ประเภทเสาเข็ม</th>
                 <th className="p-3.5 font-bold text-center">ความลึก (Depth)</th>
-                <th className="p-3.5 font-bold text-center">อัตรา Blows (m / ft)</th>
+                <th className="p-3.5 font-bold text-center">อัตรา Blows (ft / m)</th>
                 <th className="p-3.5 font-bold text-center">สถานะการตอก</th>
                 <th className="p-3.5 font-bold text-center">Last 10 Blows</th>
                 <th className="p-3.5 font-bold text-center">QA/QC As-Built</th>
@@ -87,20 +88,13 @@ export default async function PilesListPage() {
                 const qcStatus = pile.qcInspection?.deviationStatus;
                 const drivenM = pile.drivingRecord?.drivenLengthM;
                 const drivenFt = drivenM ? (drivenM * 3.28084).toFixed(1) : null;
+                const recordUnit = pile.drivingRecord?.recordUnit?.toUpperCase() === 'METER' ? 'METER' : 'FEET';
                 
-                // Parse blows array if available to calculate average blows
-                let avgBlowsM = 0;
-                let avgBlowsFt = 0;
-                if (pile.drivingRecord?.penetrationBlows) {
-                  try {
-                    const arr: (number | null)[] = JSON.parse(pile.drivingRecord.penetrationBlows);
-                    const valid = arr.filter((x): x is number => typeof x === 'number' && x > 0);
-                    if (valid.length > 0) {
-                      avgBlowsM = Math.round(valid.reduce((a, b) => a + b, 0) / valid.length);
-                      avgBlowsFt = Math.round(avgBlowsM / 3.28084);
-                    }
-                  } catch (e) {}
-                }
+                // Calculate average blows using unit-aware helper
+                const { avgBlowsFt, avgBlowsM } = calculateAverageBlows(
+                  pile.drivingRecord?.penetrationBlows,
+                  pile.drivingRecord?.recordUnit
+                );
 
                 return (
                   <tr key={pile.id} className="hover:bg-slate-50 transition">
@@ -116,18 +110,36 @@ export default async function PilesListPage() {
                     <td className="p-3.5 text-center font-mono">
                       {drivenM ? (
                         <div>
-                          <span className="font-bold text-slate-800">{drivenM} m</span>
-                          <span className="text-[10px] text-slate-400 block font-normal">({drivenFt} ft)</span>
+                          {recordUnit === 'FEET' && drivenFt ? (
+                            <>
+                              <span className="font-bold text-slate-800">{drivenFt} ft</span>
+                              <span className="text-[10px] text-slate-400 block font-normal">({drivenM} m)</span>
+                            </>
+                          ) : (
+                            <>
+                              <span className="font-bold text-slate-800">{drivenM} m</span>
+                              <span className="text-[10px] text-slate-400 block font-normal">({drivenFt} ft)</span>
+                            </>
+                          )}
                         </div>
                       ) : (
                         <span className="text-slate-300">-</span>
                       )}
                     </td>
                     <td className="p-3.5 text-center font-mono">
-                      {avgBlowsM > 0 ? (
+                      {(avgBlowsFt !== null && avgBlowsFt > 0) || (avgBlowsM !== null && avgBlowsM > 0) ? (
                         <div className="text-[11px]">
-                          <span className="font-bold text-amber-700">{avgBlowsM} blw/m</span>
-                          <span className="text-[10px] text-slate-500 block font-semibold">({avgBlowsFt} blw/ft)</span>
+                          {recordUnit === 'FEET' ? (
+                            <>
+                              <span className="font-bold text-amber-700">{avgBlowsFt} blw/ft</span>
+                              <span className="text-[10px] text-slate-500 block font-semibold">(≈ {avgBlowsM} blw/m)</span>
+                            </>
+                          ) : (
+                            <>
+                              <span className="font-bold text-amber-700">{avgBlowsM} blw/m</span>
+                              <span className="text-[10px] text-slate-500 block font-semibold">(≈ {avgBlowsFt} blw/ft)</span>
+                            </>
+                          )}
                         </div>
                       ) : (
                         <span className="text-slate-300">-</span>

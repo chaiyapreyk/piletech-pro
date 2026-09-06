@@ -39,6 +39,36 @@ describe('Driving Log with Skipped Intervals and Blow/ft Default', () => {
     expect(parsed[2]).toBeNull();
     expect(parsed[4]).toBeNull();
   });
+
+  it('correctly calculates unit-aware average blows using calculateAverageBlows helper', async () => {
+    const { calculateAverageBlows } = await import('../../src/lib/calculations/drivingLog');
+
+    // Case 1: FEET unit (recorded as 27, 32, 31 blows per foot)
+    const feetResult = calculateAverageBlows(JSON.stringify([27, 32, 31]), 'FEET');
+    expect(feetResult.primaryUnit).toBe('FEET');
+    expect(feetResult.avgBlowsFt).toBe(30);
+    expect(feetResult.avgBlowsM).toBe(98); // 30 * 3.28084 ≈ 98.4 -> 98
+
+    // Case 2: METER unit (recorded as 80, 90 blows per meter)
+    const meterResult = calculateAverageBlows(JSON.stringify([80, 90]), 'METER');
+    expect(meterResult.primaryUnit).toBe('METER');
+    expect(meterResult.avgBlowsM).toBe(85);
+    expect(meterResult.avgBlowsFt).toBe(26); // 85 / 3.28084 ≈ 25.9 -> 26
+
+    // Case 3: Empty or invalid inputs
+    const emptyResult = calculateAverageBlows(null, 'FEET');
+    expect(emptyResult.avgBlowsFt).toBeNull();
+    expect(emptyResult.avgBlowsM).toBeNull();
+
+    const emptyArrayResult = calculateAverageBlows('[]', 'FEET');
+    expect(emptyArrayResult.avgBlowsFt).toBeNull();
+    expect(emptyArrayResult.avgBlowsM).toBeNull();
+
+    // Case 4: Array with null/skipped intervals
+    const skippedResult = calculateAverageBlows(JSON.stringify([20, null, 40]), 'FEET');
+    expect(skippedResult.avgBlowsFt).toBe(30); // (20 + 40) / 2 = 30
+    expect(skippedResult.avgBlowsM).toBe(98);
+  });
 });
 
 describe('Tip Level & Engineering Elevations Calculations', () => {

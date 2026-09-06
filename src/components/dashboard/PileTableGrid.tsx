@@ -4,6 +4,7 @@ import React, { useState, useMemo } from 'react';
 import Link from 'next/link';
 import { Search, Filter, HardHat, ShieldCheck, CheckCircle2, AlertCircle, Clock } from 'lucide-react';
 import DeletePileButton from '@/components/piles/DeletePileButton';
+import { calculateAverageBlows } from '@/lib/calculations/drivingLog';
 
 interface PileItem {
   id: string;
@@ -17,6 +18,7 @@ interface PileItem {
   } | null;
   drivingRecord?: {
     penetrationBlows?: string | null;
+    recordUnit?: string;
     measuredLast10Cm: number;
     drivenLengthM: number;
     isSetPassed: boolean;
@@ -109,7 +111,7 @@ export default function PileTableGrid({ piles }: { piles: PileItem[] }) {
               <th className="p-3.5 font-bold">Grid Line</th>
               <th className="p-3.5 font-bold">สเปกเสาเข็ม / Safe Load</th>
               <th className="p-3.5 font-bold text-center">ความลึก (Depth)</th>
-              <th className="p-3.5 font-bold text-center">อัตรา Blows</th>
+              <th className="p-3.5 font-bold text-center">อัตรา Blows (ft / m)</th>
               <th className="p-3.5 font-bold text-center">Last 10 Blows</th>
               <th className="p-3.5 font-bold text-center">สถานะการตอก</th>
               <th className="p-3.5 font-bold text-center">การหนีศูนย์ (&Delta;)</th>
@@ -132,19 +134,12 @@ export default function PileTableGrid({ piles }: { piles: PileItem[] }) {
                 const qcStatus = pile.qcInspection?.deviationStatus;
                 const drivenM = pile.drivingRecord?.drivenLengthM;
                 const drivenFt = drivenM ? (drivenM * 3.28084).toFixed(1) : null;
+                const recordUnit = pile.drivingRecord?.recordUnit?.toUpperCase() === 'METER' ? 'METER' : 'FEET';
 
-                let avgBlowsM = 0;
-                let avgBlowsFt = 0;
-                if (pile.drivingRecord?.penetrationBlows) {
-                  try {
-                    const arr: (number | null)[] = JSON.parse(pile.drivingRecord.penetrationBlows);
-                    const valid = arr.filter((x): x is number => typeof x === 'number' && x > 0);
-                    if (valid.length > 0) {
-                      avgBlowsM = Math.round(valid.reduce((a, b) => a + b, 0) / valid.length);
-                      avgBlowsFt = Math.round(avgBlowsM / 3.28084);
-                    }
-                  } catch (e) {}
-                }
+                const { avgBlowsFt, avgBlowsM } = calculateAverageBlows(
+                  pile.drivingRecord?.penetrationBlows,
+                  pile.drivingRecord?.recordUnit
+                );
 
                 return (
                   <tr key={pile.id} className="hover:bg-slate-50 transition">
@@ -163,18 +158,36 @@ export default function PileTableGrid({ piles }: { piles: PileItem[] }) {
                     <td className="p-3.5 text-center font-mono font-medium">
                       {drivenM ? (
                         <div>
-                          <span className="font-bold text-slate-800">{drivenM} m</span>
-                          <span className="text-[10px] text-slate-400 block font-normal">({drivenFt} ft)</span>
+                          {recordUnit === 'FEET' && drivenFt ? (
+                            <>
+                              <span className="font-bold text-slate-800">{drivenFt} ft</span>
+                              <span className="text-[10px] text-slate-400 block font-normal">({drivenM} m)</span>
+                            </>
+                          ) : (
+                            <>
+                              <span className="font-bold text-slate-800">{drivenM} m</span>
+                              <span className="text-[10px] text-slate-400 block font-normal">({drivenFt} ft)</span>
+                            </>
+                          )}
                         </div>
                       ) : (
                         '-'
                       )}
                     </td>
                     <td className="p-3.5 text-center font-mono">
-                      {avgBlowsM > 0 ? (
+                      {(avgBlowsFt !== null && avgBlowsFt > 0) || (avgBlowsM !== null && avgBlowsM > 0) ? (
                         <div className="text-[11px]">
-                          <span className="font-bold text-amber-700">{avgBlowsM} blw/m</span>
-                          <span className="text-[10px] text-slate-500 block font-semibold">({avgBlowsFt} blw/ft)</span>
+                          {recordUnit === 'FEET' ? (
+                            <>
+                              <span className="font-bold text-amber-700">{avgBlowsFt} blw/ft</span>
+                              <span className="text-[10px] text-slate-500 block font-semibold">(≈ {avgBlowsM} blw/m)</span>
+                            </>
+                          ) : (
+                            <>
+                              <span className="font-bold text-amber-700">{avgBlowsM} blw/m</span>
+                              <span className="text-[10px] text-slate-500 block font-semibold">(≈ {avgBlowsFt} blw/ft)</span>
+                            </>
+                          )}
                         </div>
                       ) : (
                         <span className="text-slate-300">-</span>

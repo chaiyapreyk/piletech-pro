@@ -1,6 +1,7 @@
 import { getActiveProject } from '@/lib/activeProject';
 import ReportExporter from '@/components/reports/ReportExporter';
 import type { PileReportRow } from '@/lib/reports/excelGenerator';
+import { calculateAverageBlows } from '@/lib/calculations/drivingLog';
 
 export const dynamic = 'force-dynamic';
 
@@ -19,18 +20,10 @@ export default async function ReportsPage() {
   });
 
   const rows: PileReportRow[] = (project?.piles || []).map((p) => {
-    let avgBlowsM: number | null = null;
-    let avgBlowsFt: number | null = null;
-    if (p.drivingRecord?.penetrationBlows) {
-      try {
-        const arr: (number | null)[] = JSON.parse(p.drivingRecord.penetrationBlows);
-        const valid = arr.filter((x): x is number => typeof x === 'number' && x > 0);
-        if (valid.length > 0) {
-          avgBlowsM = Math.round(valid.reduce((a, b) => a + b, 0) / valid.length);
-          avgBlowsFt = Math.round(avgBlowsM / 3.28084);
-        }
-      } catch (e) {}
-    }
+    const { avgBlowsFt, avgBlowsM } = calculateAverageBlows(
+      p.drivingRecord?.penetrationBlows,
+      p.drivingRecord?.recordUnit
+    );
 
     return {
       pileNo: p.pileNo,
