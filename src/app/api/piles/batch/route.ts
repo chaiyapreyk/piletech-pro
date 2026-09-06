@@ -10,6 +10,7 @@ export async function POST(request: Request) {
       startNumber = 1,
       digits = 3,
       criteriaId,
+      projectId,
       building = 'Building A',
     } = body;
 
@@ -21,10 +22,27 @@ export async function POST(request: Request) {
       );
     }
 
-    // Find default project
-    const project = await prisma.project.findFirst({
-      include: { criteria: true },
-    });
+    // Find target project
+    let targetProjectId = projectId;
+    if (!targetProjectId) {
+      const cookieHeader = request.headers.get('cookie') || '';
+      const match = cookieHeader.match(/active_project_id=([^;]+)/);
+      if (match) targetProjectId = match[1];
+    }
+
+    let project = null;
+    if (targetProjectId) {
+      project = await prisma.project.findUnique({
+        where: { id: targetProjectId },
+        include: { criteria: true },
+      });
+    }
+
+    if (!project) {
+      project = await prisma.project.findFirst({
+        include: { criteria: true },
+      });
+    }
 
     if (!project) {
       return NextResponse.json(
@@ -109,8 +127,15 @@ export async function DELETE(request: Request) {
     const body = await request.json();
     const { mode, ids, projectId } = body;
 
-    const project = projectId
-      ? await prisma.project.findUnique({ where: { id: projectId } })
+    let targetProjectId = projectId;
+    if (!targetProjectId) {
+      const cookieHeader = request.headers.get('cookie') || '';
+      const match = cookieHeader.match(/active_project_id=([^;]+)/);
+      if (match) targetProjectId = match[1];
+    }
+
+    const project = targetProjectId
+      ? await prisma.project.findUnique({ where: { id: targetProjectId } })
       : await prisma.project.findFirst();
 
     if (!project) {

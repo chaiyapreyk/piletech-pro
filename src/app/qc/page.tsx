@@ -1,19 +1,23 @@
-import { prisma } from '@/lib/db';
+import { getActiveProject } from '@/lib/activeProject';
 import Link from 'next/link';
-import { ShieldCheck, CheckCircle2, AlertTriangle, XCircle, ChevronRight, Edit3 } from 'lucide-react';
+import { ShieldCheck, CheckCircle2, AlertTriangle, XCircle, ChevronRight, Edit3, Building2 } from 'lucide-react';
 
 export const dynamic = 'force-dynamic';
 
 export default async function QCOverviewPage() {
-  const piles = await prisma.pile.findMany({
-    include: {
-      criteria: true,
-      qcInspection: true,
-    },
-    orderBy: {
-      pileNo: 'asc',
+  const project = await getActiveProject({
+    piles: {
+      include: {
+        criteria: true,
+        qcInspection: true,
+      },
+      orderBy: {
+        pileNo: 'asc',
+      },
     },
   });
+
+  const piles = project?.piles || [];
 
   const inspectedPiles = piles.filter((p) => p.qcInspection !== null);
   const normalCount = inspectedPiles.filter((p) => p.qcInspection?.deviationStatus === 'NORMAL').length;
@@ -26,9 +30,10 @@ export default async function QCOverviewPage() {
       {/* Header */}
       <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-5 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
-          <span className="text-xs font-bold text-emerald-600 uppercase tracking-wider">
-            Quality Assurance & Quality Control
-          </span>
+          <div className="flex items-center gap-1.5 text-xs font-bold text-emerald-600 uppercase tracking-wider mb-1">
+            <Building2 className="w-3.5 h-3.5" />
+            <span>โครงการ: {project ? `${project.code} - ${project.name}` : 'กำลังโหลด...'}</span>
+          </div>
           <h1 className="text-2xl font-black text-slate-800">
             ระบบตรวจสอบและควบคุมคุณภาพ (QA/QC Inspection)
           </h1>

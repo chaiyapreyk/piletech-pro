@@ -1,4 +1,4 @@
-import { prisma } from '@/lib/db';
+import { getActiveProject } from '@/lib/activeProject';
 import ProjectKpiCards from '@/components/dashboard/ProjectKpiCards';
 import PileTableGrid from '@/components/dashboard/PileTableGrid';
 import Link from 'next/link';
@@ -7,19 +7,17 @@ import { Calculator, ClipboardList, ShieldCheck, FileSpreadsheet } from 'lucide-
 export const dynamic = 'force-dynamic';
 
 export default async function DashboardPage() {
-  const project = await prisma.project.findFirst({
-    include: {
-      settings: true,
-      criteria: true,
-      piles: {
-        include: {
-          criteria: true,
-          drivingRecord: true,
-          qcInspection: true,
-        },
-        orderBy: {
-          pileNo: 'asc',
-        },
+  const project = await getActiveProject({
+    settings: true,
+    criteria: true,
+    piles: {
+      include: {
+        criteria: true,
+        drivingRecord: true,
+        qcInspection: true,
+      },
+      orderBy: {
+        pileNo: 'asc',
       },
     },
   });

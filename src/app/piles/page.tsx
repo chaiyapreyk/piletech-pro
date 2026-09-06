@@ -1,31 +1,37 @@
-import { prisma } from '@/lib/db';
+import { getActiveProject } from '@/lib/activeProject';
 import Link from 'next/link';
-import { HardHat, ShieldCheck, CheckCircle2, AlertCircle, Clock, Plus, ChevronRight } from 'lucide-react';
+import { HardHat, ShieldCheck, CheckCircle2, AlertCircle, Clock, Plus, ChevronRight, Building2 } from 'lucide-react';
 import DeletePileButton from '@/components/piles/DeletePileButton';
 import PileNumberMatrix from '@/components/piles/PileNumberMatrix';
 
 export const dynamic = 'force-dynamic';
 
 export default async function PilesListPage() {
-  const piles = await prisma.pile.findMany({
-    include: {
-      criteria: true,
-      drivingRecord: true,
-      qcInspection: true,
-    },
-    orderBy: {
-      pileNo: 'asc',
+  const project = await getActiveProject({
+    criteria: true,
+    piles: {
+      include: {
+        criteria: true,
+        drivingRecord: true,
+        qcInspection: true,
+      },
+      orderBy: {
+        pileNo: 'asc',
+      },
     },
   });
+
+  const piles = project?.piles || [];
 
   return (
     <main className="space-y-6 pb-12">
       {/* Header */}
       <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-5 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
-          <span className="text-xs font-bold text-amber-600 uppercase tracking-wider">
-            Site Management & Pile Matrix
-          </span>
+          <div className="flex items-center gap-1.5 text-xs font-bold text-amber-600 uppercase tracking-wider mb-1">
+            <Building2 className="w-3.5 h-3.5" />
+            <span>โครงการ: {project ? `${project.code} - ${project.name}` : 'กำลังโหลด...'}</span>
+          </div>
           <h1 className="text-2xl font-black text-slate-800">
             ผังสถานะและรายการเสาเข็มในโครงการ (Piles Register)
           </h1>
@@ -45,7 +51,7 @@ export default async function PilesListPage() {
       </div>
 
       {/* Interactive Number Matrix Grid */}
-      <PileNumberMatrix initialPiles={piles} />
+      <PileNumberMatrix initialPiles={piles} projectId={project?.id} />
 
       {/* Detailed Piles Table Section Header */}
       <div className="pt-2">

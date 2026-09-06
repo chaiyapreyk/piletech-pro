@@ -1,21 +1,19 @@
-import { prisma } from '@/lib/db';
+import { getActiveProject } from '@/lib/activeProject';
 import ReportExporter from '@/components/reports/ReportExporter';
 import type { PileReportRow } from '@/lib/reports/excelGenerator';
 
 export const dynamic = 'force-dynamic';
 
 export default async function ReportsPage() {
-  const project = await prisma.project.findFirst({
-    include: {
-      piles: {
-        include: {
-          criteria: true,
-          drivingRecord: true,
-          qcInspection: true,
-        },
-        orderBy: {
-          pileNo: 'asc',
-        },
+  const project = await getActiveProject({
+    piles: {
+      include: {
+        criteria: true,
+        drivingRecord: true,
+        qcInspection: true,
+      },
+      orderBy: {
+        pileNo: 'asc',
       },
     },
   });

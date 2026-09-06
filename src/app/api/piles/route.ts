@@ -1,9 +1,20 @@
 import { NextResponse } from 'next/server';
 import { prisma } from '@/lib/db';
 
-export async function GET() {
+export async function GET(request: Request) {
   try {
+    const { searchParams } = new URL(request.url);
+    let projectId = searchParams.get('projectId');
+    if (!projectId) {
+      const cookieHeader = request.headers.get('cookie') || '';
+      const match = cookieHeader.match(/active_project_id=([^;]+)/);
+      if (match) {
+        projectId = match[1];
+      }
+    }
+
     const piles = await prisma.pile.findMany({
+      where: projectId ? { projectId } : undefined,
       include: {
         criteria: true,
         drivingRecord: true,

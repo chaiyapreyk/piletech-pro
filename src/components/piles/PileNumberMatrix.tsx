@@ -59,9 +59,10 @@ export interface PileData {
 
 interface PileNumberMatrixProps {
   initialPiles: PileData[];
+  projectId?: string;
 }
 
-export default function PileNumberMatrix({ initialPiles }: PileNumberMatrixProps) {
+export default function PileNumberMatrix({ initialPiles, projectId }: PileNumberMatrixProps) {
   const router = useRouter();
   const [piles, setPiles] = useState<PileData[]>(initialPiles);
   const [filterStatus, setFilterStatus] = useState<'ALL' | 'NOT_DRIVEN' | 'PASSED' | 'FAILED'>('ALL');
@@ -281,9 +282,17 @@ export default function PileNumberMatrix({ initialPiles }: PileNumberMatrixProps
 
     try {
       setIsAddingPile(true);
-      const projectRes = await fetch('/api/projects');
-      const projects = await projectRes.json();
-      const currentProject = projects[0];
+      const targetProjectId = projectId || (typeof window !== 'undefined' ? localStorage.getItem('active_project_id') : null);
+      let currentProject = null;
+      if (targetProjectId) {
+        const pRes = await fetch(`/api/projects/${targetProjectId}`);
+        if (pRes.ok) currentProject = await pRes.json();
+      }
+      if (!currentProject) {
+        const projectRes = await fetch('/api/projects');
+        const projects = await projectRes.json();
+        currentProject = projects[0];
+      }
 
       if (!currentProject) throw new Error('No project found');
 
@@ -344,12 +353,14 @@ export default function PileNumberMatrix({ initialPiles }: PileNumberMatrixProps
 
     try {
       setIsDeletingBulk(true);
+      const targetProjectId = projectId || (typeof window !== 'undefined' ? localStorage.getItem('active_project_id') : undefined);
       const res = await fetch('/api/piles/batch', {
         method: 'DELETE',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           mode: 'SELECTED',
           ids,
+          projectId: targetProjectId,
         }),
       });
       const data = await res.json();
@@ -374,11 +385,13 @@ export default function PileNumberMatrix({ initialPiles }: PileNumberMatrixProps
 
     try {
       setIsDeletingBulk(true);
+      const targetProjectId = projectId || (typeof window !== 'undefined' ? localStorage.getItem('active_project_id') : undefined);
       const res = await fetch('/api/piles/batch', {
         method: 'DELETE',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           mode: 'ALL_PENDING',
+          projectId: targetProjectId,
         }),
       });
       const data = await res.json();
@@ -406,6 +419,7 @@ export default function PileNumberMatrix({ initialPiles }: PileNumberMatrixProps
     try {
       setIsSubmittingBatch(true);
       setBatchFeedback(null);
+      const targetProjectId = projectId || (typeof window !== 'undefined' ? localStorage.getItem('active_project_id') : undefined);
       const res = await fetch('/api/piles/batch', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -413,6 +427,7 @@ export default function PileNumberMatrix({ initialPiles }: PileNumberMatrixProps
           totalCount: count,
           prefix: batchPrefix || 'P-',
           building: batchBuilding || 'Building A',
+          projectId: targetProjectId,
         }),
       });
 

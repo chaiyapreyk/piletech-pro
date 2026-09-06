@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { prisma } from '@/lib/db';
+import { DELETE as deleteProjectHandler } from '@/app/api/projects/[id]/route';
 
 describe('Prisma Database & Seeding Verification', () => {
   it('loads the seeded project and settings', async () => {
@@ -279,5 +280,80 @@ describe('Prisma Database & Seeding Verification', () => {
 
     // Clean up
     await prisma.project.delete({ where: { id: newProj.id } });
+  });
+
+  it('safely deletes a project and cascade-deletes all its piles, driving records, qc and criteria', async () => {
+    const code = `TEST-DELETE-${Date.now()}`;
+    const proj = await prisma.project.create({
+      data: {
+        name: 'Project To Delete',
+        code,
+        settings: { create: { defaultSafetyFactor: 2.5 } },
+        criteria: {
+          create: [
+            {
+              pileType: 'I-Section 0.26m',
+              safeWorkingLoadT: 30.0,
+              hammerWeightT: 3.5,
+              dropHeightCm: 40.0,
+              tempCompressionC: 1.2,
+              targetSet10BlowsCm: 2.5,
+            },
+          ],
+        },
+        piles: {
+          create: [
+            {
+              pileNo: 'DEL-P-01',
+              gridLine: 'D-1',
+              status: 'COMPLETED',
+              drivingRecord: {
+                create: {
+                  penetrationBlows: JSON.stringify([15, 20]),
+                  measuredLast10Cm: 2.1,
+                  drivenLengthM: 10.0,
+                  isSetPassed: true,
+                },
+              },
+              qcInspection: {
+                create: {
+                  netDeviationCm: 2.0,
+                  deviationStatus: 'NORMAL',
+                },
+              },
+            },
+          ],
+        },
+      },
+      include: {
+        piles: true,
+        criteria: true,
+      },
+    });
+
+    expect(proj.id).toBeDefined();
+    const pileId = proj.piles[0].id;
+
+    // Test DELETE handler
+    const req = new Request(`http://localhost/api/projects/${proj.id}`, { method: 'DELETE' });
+    const res = await deleteProjectHandler(req, { params: Promise.resolve({ id: proj.id }) });
+    const json = await res.json();
+
+    expect(res.status).toBe(200);
+    expect(json.success).toBe(true);
+
+    // Verify project is gone
+    const checkProj = await prisma.project.findUnique({ where: { id: proj.id } });
+    expect(checkProj).toBeNull();
+
+    // Verify pile and its records are deleted
+    const checkPile = await prisma.pile.findUnique({ where: { id: pileId } });
+    expect(checkPile).toBeNull();
+
+    const checkRecord = await prisma.drivingRecord.findUnique({ where: { pileId } });
+    expect(checkRecord).toBeNull();
+
+    const checkQC = await prisma.qCInspection.findUnique({ where: { pileId } });
+    expect(checkQC).toBeNull();
   });
 });

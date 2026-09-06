@@ -2,7 +2,7 @@
 
 import React, { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
-import { Building2, ChevronDown, Plus, Check, X, Sparkles, Layers } from 'lucide-react';
+import { Building2, ChevronDown, Plus, Check, X, Sparkles, Layers, Trash2, AlertTriangle } from 'lucide-react';
 
 interface ProjectItem {
   id: string;
@@ -24,6 +24,11 @@ export default function ProjectSwitcher() {
   const [isOpen, setIsOpen] = useState(false);
   const [showCreateModal, setShowCreateModal] = useState(false);
 
+  // Delete Project State
+  const [projectToDelete, setProjectToDelete] = useState<ProjectItem | null>(null);
+  const [showDeleteModal, setShowDeleteModal] = useState(false);
+  const [isDeleting, setIsDeleting] = useState(false);
+
   // New Project Form State
   const [newName, setNewName] = useState('');
   const [newCode, setNewCode] = useState('');
@@ -31,6 +36,12 @@ export default function ProjectSwitcher() {
   const [newContractor, setNewContractor] = useState('บริษัท เสาเข็มไทยแลนด์ จำกัด');
   const [newConsultant, setNewConsultant] = useState('Piling Tech Advisory Ltd.');
   const [isSubmitting, setIsSubmitting] = useState(false);
+
+  const setProjectCookie = (id: string) => {
+    if (typeof document !== 'undefined') {
+      document.cookie = `active_project_id=${id}; path=/; max-age=31536000; SameSite=Lax`;
+    }
+  };
 
   const fetchProjects = async () => {
     try {
@@ -41,7 +52,9 @@ export default function ProjectSwitcher() {
         if (data.length > 0 && !selectedProjectId) {
           const savedId = typeof window !== 'undefined' ? localStorage.getItem('active_project_id') : null;
           const found = data.find((p: ProjectItem) => p.id === savedId);
-          setSelectedProjectId(found ? found.id : data[0].id);
+          const chosenId = found ? found.id : data[0].id;
+          setSelectedProjectId(chosenId);
+          setProjectCookie(chosenId);
         }
       }
     } catch (err) {
@@ -59,6 +72,7 @@ export default function ProjectSwitcher() {
     setSelectedProjectId(proj.id);
     if (typeof window !== 'undefined') {
       localStorage.setItem('active_project_id', proj.id);
+      setProjectCookie(proj.id);
     }
     setIsOpen(false);
     router.refresh();
@@ -105,6 +119,43 @@ export default function ProjectSwitcher() {
     }
   };
 
+  const handleDeleteProject = async () => {
+    if (!projectToDelete) return;
+
+    try {
+      setIsDeleting(true);
+      const res = await fetch(`/api/projects/${projectToDelete.id}`, {
+        method: 'DELETE',
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        throw new Error(data.error || 'ลบโครงการไม่สำเร็จ');
+      }
+
+      setShowDeleteModal(false);
+
+      // If deleted project was the currently selected one, switch to another project
+      if (selectedProjectId === projectToDelete.id) {
+        const remaining = projects.filter((p) => p.id !== projectToDelete.id);
+        if (remaining.length > 0) {
+          setSelectedProjectId(remaining[0].id);
+          if (typeof window !== 'undefined') {
+            localStorage.setItem('active_project_id', remaining[0].id);
+            setProjectCookie(remaining[0].id);
+          }
+        }
+      }
+
+      setProjectToDelete(null);
+      await fetchProjects();
+      router.refresh();
+    } catch (err: any) {
+      alert(err.message);
+    } finally {
+      setIsDeleting(false);
+    }
+  };
+
   return (
     <>
       <div className="relative">
@@ -135,21 +186,23 @@ export default function ProjectSwitcher() {
               </span>
             </div>
 
-            <div className="max-h-56 overflow-y-auto divide-y divide-slate-800/60 p-1">
+            <div className="max-h-60 overflow-y-auto divide-y divide-slate-800/60 p-1">
               {projects.map((proj) => {
                 const isCurrent = proj.id === activeProject?.id;
                 return (
-                  <button
+                  <div
                     key={proj.id}
-                    type="button"
-                    onClick={() => handleSelectProject(proj)}
-                    className={`w-full text-left p-2.5 rounded-xl flex items-start justify-between gap-2 transition cursor-pointer ${
+                    className={`w-full p-2.5 rounded-xl flex items-center justify-between gap-2 transition group ${
                       isCurrent
                         ? 'bg-amber-500/10 text-white'
                         : 'text-slate-300 hover:bg-slate-800/80 hover:text-white'
                     }`}
                   >
-                    <div className="min-w-0">
+                    <button
+                      type="button"
+                      onClick={() => handleSelectProject(proj)}
+                      className="flex-1 min-w-0 text-left cursor-pointer"
+                    >
                       <div className="flex items-center gap-1.5">
                         <span className="font-bold text-xs font-mono text-amber-400">
                           {proj.code}
@@ -163,8 +216,26 @@ export default function ProjectSwitcher() {
                         <span>เสาเข็ม: {proj._count?.piles ?? 0} ต้น</span>
                         {proj.location && <span>• {proj.location}</span>}
                       </div>
-                    </div>
-                  </button>
+                    </button>
+
+                    <button
+                      type="button"
+                      title={projects.length <= 1 ? 'ไม่สามารถลบโครงการสุดท้ายได้' : `ลบโครงการ ${proj.code}`}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        if (projects.length <= 1) {
+                          alert('ไม่สามารถลบโครงการสุดท้ายได้ ระบบต้องมีอย่างน้อย 1 โครงการ');
+                          return;
+                        }
+                        setProjectToDelete(proj);
+                        setShowDeleteModal(true);
+                        setIsOpen(false);
+                      }}
+                      className="p-1.5 rounded-lg text-slate-500 hover:text-rose-400 hover:bg-rose-500/20 transition cursor-pointer shrink-0"
+                    >
+                      <Trash2 className="w-4 h-4" />
+                    </button>
+                  </div>
                 );
               })}
             </div>
@@ -304,6 +375,88 @@ export default function ProjectSwitcher() {
                 </button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* Delete Project Confirmation Modal */}
+      {showDeleteModal && projectToDelete && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/70 backdrop-blur-xs animate-in fade-in duration-150 text-slate-900">
+          <div className="bg-white rounded-2xl shadow-2xl border border-rose-100 w-full max-w-md overflow-hidden animate-in zoom-in-95 duration-150">
+            <div className="bg-rose-600 text-white p-4 flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <div className="bg-white/20 p-1.5 rounded-lg text-white">
+                  <Trash2 className="w-5 h-5" />
+                </div>
+                <div>
+                  <h3 className="text-base font-black">ยืนยันการลบโครงการ</h3>
+                  <span className="text-[10px] text-rose-200 font-semibold block">
+                    DELETE PROJECT CONFIRMATION
+                  </span>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => {
+                  setShowDeleteModal(false);
+                  setProjectToDelete(null);
+                }}
+                className="text-white/70 hover:text-white p-1 rounded-lg"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <div className="p-5 space-y-4">
+              <div className="bg-rose-50 border border-rose-200 rounded-xl p-3.5 flex items-start gap-3">
+                <AlertTriangle className="w-5 h-5 text-rose-600 shrink-0 mt-0.5" />
+                <div className="text-xs text-rose-900 leading-relaxed">
+                  <p className="font-bold mb-1">คำเตือน: การกระทำนี้ไม่สามารถย้อนกลับได้!</p>
+                  <p>
+                    ข้อมูลเสาเข็มทั้งหมด (
+                    <strong className="font-bold text-rose-700">
+                      {projectToDelete._count?.piles ?? 0} ต้น
+                    </strong>
+                    ), เกณฑ์การตอก, บันทึกการตอก และผลการตรวจสอบ QC ที่เกี่ยวข้องกับโครงการนี้จะถูกลบออกจากฐานข้อมูลอย่างถาวร
+                  </p>
+                </div>
+              </div>
+
+              <div className="bg-slate-50 border border-slate-200 rounded-xl p-3">
+                <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400 block mb-1">
+                  โครงการที่จะลบ
+                </span>
+                <div className="text-sm font-bold text-slate-800">
+                  {projectToDelete.name}
+                </div>
+                <div className="text-xs font-mono font-semibold text-slate-500 mt-0.5">
+                  รหัส: {projectToDelete.code}
+                </div>
+              </div>
+
+              <div className="pt-2 flex items-center justify-end gap-2 border-t border-slate-100">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setShowDeleteModal(false);
+                    setProjectToDelete(null);
+                  }}
+                  disabled={isDeleting}
+                  className="px-4 py-2 rounded-lg text-xs font-bold text-slate-600 hover:bg-slate-100 transition"
+                >
+                  ยกเลิก
+                </button>
+                <button
+                  type="button"
+                  onClick={handleDeleteProject}
+                  disabled={isDeleting}
+                  className="px-4 py-2 rounded-lg text-xs font-bold bg-rose-600 hover:bg-rose-700 text-white transition shadow-sm disabled:opacity-50 inline-flex items-center gap-1.5"
+                >
+                  <Trash2 className="w-3.5 h-3.5" />
+                  <span>{isDeleting ? 'กำลังลบ...' : 'ยืนยันลบโครงการถาวร'}</span>
+                </button>
+              </div>
+            </div>
           </div>
         </div>
       )}
