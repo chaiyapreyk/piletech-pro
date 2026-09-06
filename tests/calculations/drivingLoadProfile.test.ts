@@ -314,4 +314,78 @@ describe('Driving Load Profile Engine (spec 2026-09-06)', () => {
       expect(result.points[0].estimatedUltimateLoadT).toBeNull();
     });
   });
+
+  describe('4.6 Target Blows / Stopping Criteria Line (Refusal Blow Count)', () => {
+    it('calculates equivalent refusal Blow/ft from criteria targetSet10BlowsCm (304.8 / S10)', () => {
+      const criteriaWithTargetSet: DrivingCriteriaInput = {
+        ...standardCriteria,
+        targetSet10BlowsCm: 7.44,
+      };
+
+      const record: DrivingRecordInput = {
+        penetrationBlows: JSON.stringify([20, 30]),
+        recordUnit: 'FEET',
+      };
+
+      const result = calculateDrivingLoadProfile(record, criteriaWithTargetSet);
+
+      expect(result.targetBlowsLine).not.toBeNull();
+      expect(result.targetBlowsLine?.targetBlows).toBe(41); // 304.8 / 7.44 = 40.97 => 41
+      expect(result.targetBlowsLine?.unit).toBe('Blow/ft');
+      expect(result.targetBlowsLine?.label).toBe('Refusal ≥ 41');
+      expect(result.targetBlowsLine?.pdfLabel).toBe('Refusal >= 41');
+      expect(result.targetBlowsLine?.fullLabel).toBe('Refusal ≥ 41 Blow/ft');
+      // maxBlows must expand to encompass the refusal line
+      expect(result.maxBlows).toBeGreaterThanOrEqual(41);
+    });
+
+    it('calculates equivalent refusal Blow/m when recordUnit is METER (1000 / S10)', () => {
+      const criteriaWithTargetSet: DrivingCriteriaInput = {
+        ...standardCriteria,
+        targetSet10BlowsCm: 7.44,
+      };
+
+      const record: DrivingRecordInput = {
+        penetrationBlows: JSON.stringify([30, 40]),
+        recordUnit: 'METER',
+      };
+
+      const result = calculateDrivingLoadProfile(record, criteriaWithTargetSet);
+
+      expect(result.targetBlowsLine).not.toBeNull();
+      expect(result.targetBlowsLine?.targetBlows).toBe(134); // 1000 / 7.44 = 134.4 => 134
+      expect(result.targetBlowsLine?.unit).toBe('Blow/m');
+      expect(result.targetBlowsLine?.label).toBe('Refusal ≥ 134');
+      expect(result.targetBlowsLine?.fullLabel).toBe('Refusal ≥ 134 Blow/m');
+      expect(result.maxBlows).toBeGreaterThanOrEqual(134);
+    });
+
+    it('derives refusal blow count dynamically via Hiley formula when targetSet10BlowsCm is null', () => {
+      const criteriaWithoutTargetSet: DrivingCriteriaInput = {
+        ...standardCriteria,
+        targetSet10BlowsCm: null,
+      };
+
+      const record: DrivingRecordInput = {
+        penetrationBlows: JSON.stringify([25]),
+        recordUnit: 'FEET',
+      };
+
+      const result = calculateDrivingLoadProfile(record, criteriaWithoutTargetSet);
+
+      expect(result.targetBlowsLine).not.toBeNull();
+      expect(result.targetBlowsLine?.targetBlows).toBeGreaterThan(0);
+      expect(result.targetBlowsLine?.unit).toBe('Blow/ft');
+    });
+
+    it('returns null targetBlowsLine when criteria is absent or invalid', () => {
+      const record: DrivingRecordInput = {
+        penetrationBlows: JSON.stringify([25]),
+        recordUnit: 'FEET',
+      };
+
+      const result = calculateDrivingLoadProfile(record, null);
+      expect(result.targetBlowsLine).toBeNull();
+    });
+  });
 });

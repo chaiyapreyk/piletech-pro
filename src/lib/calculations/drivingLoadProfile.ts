@@ -1,5 +1,6 @@
 import {
   calculateBearingCapacityFromSet,
+  calculateHiley,
   type HileyInput,
 } from './hiley';
 
@@ -22,6 +23,15 @@ export interface FsReferenceLine {
   factor: number; // 2.5, 3.0, 3.5, 4.0
   ultimateLoadT: number; // SWL * factor
   label: string; // e.g. "FS 3.0 · 105 t"
+}
+
+export interface TargetBlowsLine {
+  targetBlows: number; // e.g. 41
+  targetSet10Cm: number; // e.g. 7.44
+  unit: 'Blow/ft' | 'Blow/m';
+  label: string; // e.g. "Refusal ≥ 41"
+  pdfLabel: string; // e.g. "Refusal >= 41"
+  fullLabel: string; // e.g. "Refusal ≥ 41 Blow/ft"
 }
 
 export interface ElevationMarkers {
@@ -76,6 +86,7 @@ export interface DrivingLoadProfileResult {
   isWindowScope: boolean;
   points: LoadProfileIntervalPoint[];
   fsLines: FsReferenceLine[];
+  targetBlowsLine: TargetBlowsLine | null;
   elevations: ElevationMarkers;
   validation: MissingCriteriaValidation;
   maxBlows: number;
@@ -274,6 +285,38 @@ export function calculateDrivingLoadProfile(
     };
   }
 
+  // 5.1 Calculate Target Blows / Stopping Criteria line (Refusal Line)
+  let targetBlowsLine: TargetBlowsLine | null = null;
+  let targetSet10Cm: number | null = null;
+
+  if (criteria?.targetSet10BlowsCm && Number(criteria.targetSet10BlowsCm) > 0) {
+    targetSet10Cm = Number(criteria.targetSet10BlowsCm);
+  } else if (hileyInput) {
+    const nominalHiley = calculateHiley(hileyInput);
+    if (nominalHiley.status === 'VALID' && nominalHiley.targetSet10BlowsCm > 0) {
+      targetSet10Cm = nominalHiley.targetSet10BlowsCm;
+    }
+  }
+
+  if (targetSet10Cm !== null && targetSet10Cm > 0) {
+    const isFt = recordUnit === 'FEET';
+    const targetBlows = isFt
+      ? Math.round(304.8 / targetSet10Cm)
+      : Math.round(1000 / targetSet10Cm);
+    const unitLabel = isFt ? 'Blow/ft' : 'Blow/m';
+
+    if (targetBlows > 0 && isFinite(targetBlows)) {
+      targetBlowsLine = {
+        targetBlows,
+        targetSet10Cm: Number(targetSet10Cm.toFixed(2)),
+        unit: unitLabel,
+        label: `Refusal ≥ ${targetBlows}`,
+        pdfLabel: `Refusal >= ${targetBlows}`,
+        fullLabel: `Refusal ≥ ${targetBlows} ${unitLabel}`,
+      };
+    }
+  }
+
   // 6. Calculate interval points
   const points: LoadProfileIntervalPoint[] = [];
   let maxBlows = 0;
@@ -423,9 +466,10 @@ export function calculateDrivingLoadProfile(
     isWindowScope,
     points,
     fsLines,
+    targetBlowsLine,
     elevations,
     validation,
-    maxBlows: Math.max(maxBlows, 30),
+    maxBlows: Math.max(maxBlows, targetBlowsLine ? targetBlowsLine.targetBlows : 0, 30),
     maxLoadT: Math.max(maxLoadT, 50),
     minElevationM,
     maxElevationM,

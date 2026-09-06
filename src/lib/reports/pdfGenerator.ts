@@ -427,6 +427,20 @@ export function generateIndividualPilePDFDocument({
   // Elevation Reference Markers for Chart 1
   drawPDFElevationMarkers(chart1X);
 
+  // Target Blows / Stopping Criteria (Refusal line) Chart 1
+  if (profile.targetBlowsLine) {
+    const stopX = getBlowXPDF(profile.targetBlowsLine.targetBlows);
+    if (stopX <= chart1X + plotInnerMarginLeft + plotInnerW) {
+      doc.setDrawColor(16, 185, 129); // Emerald 500
+      doc.setLineWidth(0.25);
+      doc.line(stopX, curY + plotInnerMarginTop, stopX, curY + plotInnerMarginTop + plotInnerH);
+      doc.setFontSize(5);
+      doc.setFont('helvetica', 'bold');
+      doc.setTextColor(5, 150, 105); // Emerald 600
+      doc.text(profile.targetBlowsLine.pdfLabel, stopX, curY + plotInnerMarginTop - 1, { align: 'center' });
+    }
+  }
+
   // Polyline for Blows
   const validBlowPoints = points
     .map((p, idx) => (p.recordedBlows !== null ? { x: getBlowXPDF(p.recordedBlows), y: getYFromIndexPDF(idx) } : null))

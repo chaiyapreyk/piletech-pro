@@ -47,6 +47,7 @@ export default function PileLoadProfileChart({
     recordUnit,
     points,
     fsLines,
+    targetBlowsLine,
     elevations,
     validation,
     maxBlows,
@@ -263,28 +264,38 @@ export default function PileLoadProfileChart({
             )}
           </div>
 
-          {/* FS Lines Legend */}
-          {validation.isCriteriaValid && fsLines.length > 0 && (
+          {/* Reference Lines Legend */}
+          {validation.isCriteriaValid && (targetBlowsLine || fsLines.length > 0) && (
             <div className="flex flex-wrap items-center gap-2">
-              <span className="text-slate-400 font-semibold text-[10px] uppercase tracking-wider">
-                เส้นเทียบ Factor of Safety:
-              </span>
-              <span className="inline-flex items-center gap-1 text-emerald-400 font-mono text-[10px]">
-                <span className="w-2.5 h-0.5 border-b border-dashed border-emerald-400 inline-block"></span>
-                FS 2.5 ({fsLines[0]?.ultimateLoadT}t)
-              </span>
-              <span className="inline-flex items-center gap-1 text-sky-400 font-mono text-[10px]">
-                <span className="w-2.5 h-0.5 border-b border-dashed border-sky-400 inline-block"></span>
-                FS 3.0 ({fsLines[1]?.ultimateLoadT}t)
-              </span>
-              <span className="inline-flex items-center gap-1 text-indigo-400 font-mono text-[10px]">
-                <span className="w-2.5 h-0.5 border-b border-dashed border-indigo-400 inline-block"></span>
-                FS 3.5 ({fsLines[2]?.ultimateLoadT}t)
-              </span>
-              <span className="inline-flex items-center gap-1 text-purple-400 font-mono text-[10px]">
-                <span className="w-2.5 h-0.5 border-b border-dashed border-purple-400 inline-block"></span>
-                FS 4.0 ({fsLines[3]?.ultimateLoadT}t)
-              </span>
+              {targetBlowsLine && (
+                <span className="inline-flex items-center gap-1 text-emerald-400 font-mono text-[10px] mr-1">
+                  <span className="w-2.5 h-0.5 border-b border-dashed border-emerald-400 inline-block"></span>
+                  {targetBlowsLine.label} {blowUnitLabel}
+                </span>
+              )}
+              {fsLines.length > 0 && (
+                <>
+                  <span className="text-slate-400 font-semibold text-[10px] uppercase tracking-wider">
+                    เส้นเทียบ Factor of Safety:
+                  </span>
+                  <span className="inline-flex items-center gap-1 text-emerald-400 font-mono text-[10px]">
+                    <span className="w-2.5 h-0.5 border-b border-dashed border-emerald-400 inline-block"></span>
+                    FS 2.5 ({fsLines[0]?.ultimateLoadT}t)
+                  </span>
+                  <span className="inline-flex items-center gap-1 text-sky-400 font-mono text-[10px]">
+                    <span className="w-2.5 h-0.5 border-b border-dashed border-sky-400 inline-block"></span>
+                    FS 3.0 ({fsLines[1]?.ultimateLoadT}t)
+                  </span>
+                  <span className="inline-flex items-center gap-1 text-indigo-400 font-mono text-[10px]">
+                    <span className="w-2.5 h-0.5 border-b border-dashed border-indigo-400 inline-block"></span>
+                    FS 3.5 ({fsLines[2]?.ultimateLoadT}t)
+                  </span>
+                  <span className="inline-flex items-center gap-1 text-purple-400 font-mono text-[10px]">
+                    <span className="w-2.5 h-0.5 border-b border-dashed border-purple-400 inline-block"></span>
+                    FS 4.0 ({fsLines[3]?.ultimateLoadT}t)
+                  </span>
+                </>
+              )}
             </div>
           )}
         </div>
@@ -400,6 +411,39 @@ export default function PileLoadProfileChart({
                     );
                   })
                 )}
+
+                {/* Target Blows / Stopping Criteria (Refusal Line) */}
+                {targetBlowsLine && (() => {
+                  const targetX = getBlowX(targetBlowsLine.targetBlows);
+                  const isNearRight = targetX > marginLeft + plotWidth - 50;
+                  const isNearLeft = targetX < marginLeft + 50;
+                  const textAnchor = isNearRight ? 'end' : isNearLeft ? 'start' : 'middle';
+                  const textX = isNearRight ? targetX - 2 : isNearLeft ? targetX + 2 : targetX;
+                  return (
+                    <g key="target-blows-refusal-line" className="pointer-events-none">
+                      <line
+                        x1={targetX}
+                        y1={marginTop}
+                        x2={targetX}
+                        y2={marginTop + plotHeight}
+                        stroke="#10b981"
+                        strokeWidth={1.5}
+                        strokeDasharray="4 3"
+                      />
+                      <text
+                        x={textX}
+                        y={marginTop - 6}
+                        fill="#059669"
+                        fontSize={9}
+                        fontWeight="bold"
+                        textAnchor={textAnchor}
+                        fontFamily="monospace"
+                      >
+                        {targetBlowsLine.label}
+                      </text>
+                    </g>
+                  );
+                })()}
 
                 {/* Full-width interactive horizontal hover bands for every elevation level */}
                 {points.map((pt, idx) => {
