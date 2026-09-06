@@ -4,7 +4,7 @@ import React, { useState } from 'react';
 import { LineChart as LineChartIcon, BarChart3, Info } from 'lucide-react';
 
 interface Props {
-  blowCounts: number[];
+  blowCounts: (number | null)[];
   recordUnit?: 'METER' | 'FEET';
   recordScope?: 'FULL' | 'WINDOW';
   windowLength?: number;
@@ -12,8 +12,8 @@ interface Props {
 
 export default function DepthSoilChart({
   blowCounts,
-  recordUnit = 'METER',
-  recordScope = 'FULL',
+  recordUnit = 'FEET',
+  recordScope = 'WINDOW',
   windowLength = 20,
 }: Props) {
   const [chartMode, setChartMode] = useState<'LINE' | 'BAR'>('LINE');
@@ -37,7 +37,8 @@ export default function DepthSoilChart({
     );
   }
 
-  const rawMax = Math.max(...blowCounts, 10);
+  const validBlows = blowCounts.filter((b): b is number => typeof b === 'number' && b > 0);
+  const rawMax = validBlows.length > 0 ? Math.max(...validBlows, 10) : 30;
   // Scale max nicely to standard intervals: 30, 50, 60, 80, 100, etc.
   const maxScale = rawMax <= 30 ? 30 : rawMax <= 50 ? 50 : rawMax <= 70 ? 70 : Math.ceil(rawMax / 20) * 20;
   const totalCount = blowCounts.length;
@@ -46,7 +47,7 @@ export default function DepthSoilChart({
     ? `${totalCount} ft (${(totalCount * 0.3048).toFixed(1)} ม.)`
     : `${totalCount} ม. (${(totalCount * 3.28084).toFixed(1)} ft)`;
 
-  const maxBlow = Math.max(...blowCounts);
+  const maxBlow = validBlows.length > 0 ? Math.max(...validBlows) : 0;
   const maxBlowStr = isFeet
     ? `${maxBlow} blw/ft (${Math.round(maxBlow * 3.28084)} blw/m)`
     : `${maxBlow} blw/m (${Math.round(maxBlow / 3.28084)} blw/ft)`;
@@ -65,11 +66,15 @@ export default function DepthSoilChart({
   const getX = (val: number) => marginLeft + (Math.min(val, maxScale) / maxScale) * plotWidth;
   const getY = (idx: number) => marginTop + (idx + 0.5) * (plotHeight / totalCount);
 
-  // Generate points for polyline and filled area
-  const points = blowCounts.map((val, idx) => `${getX(val)},${getY(idx)}`).join(' ');
-  const firstPoint = blowCounts.length > 0 ? `${marginLeft},${getY(0)}` : '';
-  const lastPoint = blowCounts.length > 0 ? `${marginLeft},${getY(totalCount - 1)}` : '';
-  const areaPoints = `${firstPoint} ${points} ${lastPoint}`;
+  // Generate valid points for polyline and filled area
+  const validNodes = blowCounts
+    .map((val, idx) => (typeof val === 'number' ? { val, idx, x: getX(val), y: getY(idx) } : null))
+    .filter((n): n is { val: number; idx: number; x: number; y: number } => n !== null);
+
+  const points = validNodes.map((n) => `${n.x},${n.y}`).join(' ');
+  const firstPoint = validNodes.length > 0 ? `${marginLeft},${validNodes[0].y}` : '';
+  const lastPoint = validNodes.length > 0 ? `${marginLeft},${validNodes[validNodes.length - 1].y}` : '';
+  const areaPoints = validNodes.length > 0 ? `${firstPoint} ${points} ${lastPoint}` : '';
 
   // Strata boundary X positions
   const xSoft = getX(15);
@@ -311,11 +316,44 @@ export default function DepthSoilChart({
                 strokeLinejoin="round"
               />
 
-              {/* 6. Interactive Data Nodes (Circles) */}
+              {/* 6. Interactive Data Nodes (Circles) & Skipped Indicators */}
               {blowCounts.map((val, idx) => {
-                const cx = getX(val);
                 const cy = getY(idx);
                 const isHovered = hoveredIndex === idx;
+
+                if (val === null) {
+                  return (
+                    <g
+                      key={idx}
+                      className="cursor-pointer"
+                      onMouseEnter={() => setHoveredIndex(idx)}
+                      onMouseLeave={() => setHoveredIndex(null)}
+                      onClick={() => setHoveredIndex(idx === hoveredIndex ? null : idx)}
+                    >
+                      <rect
+                        x={marginLeft + 4}
+                        y={cy - 7}
+                        width={65}
+                        height={14}
+                        rx={3}
+                        fill={isHovered ? '#fed7aa' : '#f1f5f9'}
+                        stroke={isHovered ? '#f97316' : '#cbd5e1'}
+                        strokeDasharray="2,2"
+                        strokeWidth="1"
+                      />
+                      <text
+                        x={marginLeft + 36}
+                        y={cy + 3.5}
+                        textAnchor="middle"
+                        className="text-[8px] font-mono fill-slate-500 font-bold"
+                      >
+                        ข้าม (Skip)
+                      </text>
+                    </g>
+                  );
+                }
+
+                const cx = getX(val);
                 const nodeColor = val >= 50 ? '#e11d48' : val >= 30 ? '#ea580c' : '#d97706';
 
                 return (
@@ -363,18 +401,26 @@ export default function DepthSoilChart({
                     ({isFeet ? `${((hoveredIndex + 1) * 0.3048).toFixed(1)}m` : `${((hoveredIndex + 1) * 3.28084).toFixed(0)}ft`})
                   </span>
                 </span>
-                <span className="font-black text-amber-300 text-sm">
-                  {blowCounts[hoveredIndex]} {blowUnitLabel}
-                </span>
+                {typeof blowCounts[hoveredIndex] === 'number' ? (
+                  <span className="font-black text-amber-300 text-sm">
+                    {blowCounts[hoveredIndex]} {blowUnitLabel}
+                  </span>
+                ) : (
+                  <span className="text-xs font-bold text-amber-300 bg-amber-950 px-2 py-0.5 rounded border border-amber-800">
+                    ข้ามบันทึก (Skipped)
+                  </span>
+                )}
               </div>
-              <div className="text-[11px] text-slate-300 flex items-center justify-between">
-                <span>{getSoilStratumName(blowCounts[hoveredIndex])}</span>
-                <span className="text-slate-400 font-mono">
-                  {isFeet
-                    ? `&asymp; ${Math.round(blowCounts[hoveredIndex] * 3.28084)} blw/m`
-                    : `&asymp; ${Math.round(blowCounts[hoveredIndex] / 3.28084)} blw/ft`}
-                </span>
-              </div>
+              {typeof blowCounts[hoveredIndex] === 'number' && (
+                <div className="text-[11px] text-slate-300 flex items-center justify-between">
+                  <span>{getSoilStratumName(blowCounts[hoveredIndex]!)}</span>
+                  <span className="text-slate-400 font-mono">
+                    {isFeet
+                      ? `≈ ${Math.round(blowCounts[hoveredIndex]! * 3.28084)} blw/m`
+                      : `≈ ${Math.round(blowCounts[hoveredIndex]! / 3.28084)} blw/ft`}
+                  </span>
+                </div>
+              )}
             </div>
           )}
         </div>
@@ -388,6 +434,21 @@ export default function DepthSoilChart({
             const altDepth = isFeet
               ? `${(step * 0.3048).toFixed(1)}m`
               : `${(step * 3.28084).toFixed(0)}ft`;
+
+            if (blow === null) {
+              return (
+                <div key={idx} className="flex items-center gap-2 text-xs">
+                  <span className="w-20 text-slate-400 font-mono text-[10px] text-right whitespace-nowrap">
+                    {step} {unitLabel} <span className="text-slate-300">({altDepth})</span>:
+                  </span>
+                  <div className="flex-1 bg-slate-100/80 border border-dashed border-slate-300 rounded-full h-4 overflow-hidden relative flex items-center px-2.5">
+                    <span className="text-[10px] font-mono font-bold text-slate-500 italic">
+                      ข้ามบันทึก (Skipped)
+                    </span>
+                  </div>
+                </div>
+              );
+            }
 
             const altBlow = isFeet
               ? `${Math.round(blow * 3.28084)} blw/m`

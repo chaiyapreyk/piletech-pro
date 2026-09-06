@@ -23,9 +23,10 @@ export default async function ReportsPage() {
     let avgBlowsFt: number | null = null;
     if (p.drivingRecord?.penetrationBlows) {
       try {
-        const arr: number[] = JSON.parse(p.drivingRecord.penetrationBlows);
-        if (arr.length > 0) {
-          avgBlowsM = Math.round(arr.reduce((a, b) => a + b, 0) / arr.length);
+        const arr: (number | null)[] = JSON.parse(p.drivingRecord.penetrationBlows);
+        const valid = arr.filter((x): x is number => typeof x === 'number' && x > 0);
+        if (valid.length > 0) {
+          avgBlowsM = Math.round(valid.reduce((a, b) => a + b, 0) / valid.length);
           avgBlowsFt = Math.round(avgBlowsM / 3.28084);
         }
       } catch (e) {}

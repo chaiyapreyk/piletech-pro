@@ -39,16 +39,16 @@ interface PileData {
 
 export default function DrivingRecordForm({ pile }: { pile: PileData }) {
   const router = useRouter();
-  const initialBlows = pile.drivingRecord?.penetrationBlows
+  const initialBlows: (number | null)[] = pile.drivingRecord?.penetrationBlows
     ? JSON.parse(pile.drivingRecord.penetrationBlows)
     : [];
 
-  const [blowCounts, setBlowCounts] = useState<number[]>(initialBlows);
+  const [blowCounts, setBlowCounts] = useState<(number | null)[]>(initialBlows);
   const [recordUnit, setRecordUnit] = useState<'METER' | 'FEET'>(
-    (pile.drivingRecord?.recordUnit as 'METER' | 'FEET') || 'METER'
+    (pile.drivingRecord?.recordUnit as 'METER' | 'FEET') || 'FEET'
   );
   const [recordScope, setRecordScope] = useState<'FULL' | 'WINDOW'>(
-    (pile.drivingRecord?.recordScope as 'FULL' | 'WINDOW') || 'FULL'
+    (pile.drivingRecord?.recordScope as 'FULL' | 'WINDOW') || 'WINDOW'
   );
   const [windowLength, setWindowLength] = useState<number>(
     pile.drivingRecord?.windowLengthFt || 20
@@ -88,18 +88,19 @@ export default function DrivingRecordForm({ pile }: { pile: PileData }) {
     setSavedSuccess(false);
 
     try {
+      const cleanBlows = [...blowCounts];
       const drivenLength = recordUnit === 'FEET'
-        ? (blowCounts.length > 0 ? Number((blowCounts.length * 0.3048).toFixed(2)) : 0)
-        : (blowCounts.length > 0 ? blowCounts.length : 0);
+        ? (cleanBlows.length > 0 ? Number((cleanBlows.length * 0.3048).toFixed(2)) : 0)
+        : (cleanBlows.length > 0 ? cleanBlows.length : 0);
 
       const res = await fetch(`/api/piles/${pile.id}/drive`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          penetrationBlows: blowCounts,
+          penetrationBlows: cleanBlows,
           recordUnit,
           recordScope,
-          windowLengthFt: windowLength,
+          windowLengthFt: recordScope === 'WINDOW' ? windowLength : null,
           measuredLast10Cm: measuredLast10,
           measuredTempCCm: measuredTempC,
           drivenLengthM: drivenLength,
