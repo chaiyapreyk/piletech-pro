@@ -461,14 +461,14 @@ export default function PileLoadProfileChart({
             </div>
           </div>
 
-          {/* Chart 2: Estimated Ultimate Load Profile ($R_u$) */}
+          {/* Chart 2: Estimated Ultimate Load Profile (Ru) */}
           <div className="bg-white rounded-2xl border border-slate-200 p-4 shadow-xs flex flex-col justify-between">
             <div>
               <div className="flex items-center justify-between mb-2">
                 <div className="flex items-center gap-2">
                   <span className="w-2.5 h-2.5 rounded-full bg-indigo-600"></span>
                   <span className="text-xs font-black text-slate-800">
-                    2. Estimated Ultimate Load Profile ($R_u$, tonnes)
+                    2. Estimated Ultimate Load Profile (Ru, tonnes)
                   </span>
                 </div>
                 {hasValidLoadPoints && (
@@ -557,14 +557,14 @@ export default function PileLoadProfileChart({
                           />
                           <text
                             x={x}
-                            y={marginTop - 8}
+                            y={marginTop - (idx % 2 === 0 ? 6 : 18)}
                             fill={strokeColor}
-                            fontSize={8.5}
+                            fontSize={7.5}
                             fontWeight="bold"
                             textAnchor="middle"
                             fontFamily="monospace"
                           >
-                            {fs.label}
+                            FS {fs.factor} ({fs.ultimateLoadT}t)
                           </text>
                         </g>
                       );
@@ -572,7 +572,7 @@ export default function PileLoadProfileChart({
 
                     {/* X-axis title */}
                     <text x={marginLeft + plotWidth / 2} y={chartHeight - 4} fill="#475569" fontSize={10} fontWeight="bold" textAnchor="middle">
-                      กำลังรับน้ำหนักประเมิน Ultimate Load ($R_u$, ตัน)
+                      กำลังรับน้ำหนักประเมิน Ultimate Load (Ru, ตัน)
                     </text>
 
                     {/* Elevation Horizontal Markers */}
@@ -733,10 +733,10 @@ export default function PileLoadProfileChart({
             )}
             {hoveredPoint.estimatedUltimateLoadT !== null ? (
               <span className="bg-indigo-600 text-white font-bold px-2.5 py-1 rounded-lg">
-                $R_u$ ประเมิน: {hoveredPoint.estimatedUltimateLoadT} ตัน (Ra: {hoveredPoint.estimatedSafeWorkingLoadT}t)
+                Ru ประเมิน: {hoveredPoint.estimatedUltimateLoadT} ตัน (Ra: {hoveredPoint.estimatedSafeWorkingLoadT}t)
               </span>
             ) : (
-              <span className="text-slate-400">ไม่มีค่า $R_u$</span>
+              <span className="text-slate-400">ไม่มีค่า Ru</span>
             )}
             {hoveredPoint.compressionSource !== 'NONE' && (
               <span className="text-[10px] text-slate-400">

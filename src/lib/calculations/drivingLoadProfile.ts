@@ -292,11 +292,29 @@ export function calculateDrivingLoadProfile(
       : null;
 
   const totalRawCount = rawBlows.length;
-  const intervalFactorM = recordUnit === 'FEET' ? 0.3048 : 1.0;
+
+  // Smart Unit Resolution:
+  // If recordUnit is FEET, but record is NOT explicitly WINDOW/LAST_N, and total blows count
+  // matches drivenLength in meters (e.g. 21 blows for a 21.0m pile):
+  // Resolve unit to METER so readings are mapped 1:1 per meter down to the tip.
+  let resolvedUnit: 'FEET' | 'METER' = recordUnit;
+  if (
+    recordUnit === 'FEET' &&
+    !isExplicitWindow &&
+    !record?.windowLengthFt &&
+    drivenLengthM !== null &&
+    totalRawCount > 0 &&
+    Math.abs(totalRawCount - drivenLengthM) <= 1
+  ) {
+    resolvedUnit = 'METER';
+  }
+
+  const intervalFactorM = resolvedUnit === 'FEET' ? 0.3048 : 1.0;
   const totalRecordedSpanM = totalRawCount * intervalFactorM;
 
-  // Auto-detect WINDOW scope if not explicitly FULL:
-  // When recordScope is explicitly WINDOW/LAST_N, or when total blows recorded only span <= 75% of driven length
+  // Smart Scope Resolution:
+  // If explicitly WINDOW, or if record is NOT explicitly FULL and total recorded depth is <= 75% of driven length
+  // (e.g. last 20 ft recorded out of 21m pile without explicit scope tag), anchor the curve directly to the pile tip level.
   const isWindowScope =
     isExplicitWindow ||
     (!isExplicitFull &&
@@ -343,7 +361,7 @@ export function calculateDrivingLoadProfile(
 
     if (blows !== null && blows > 0) {
       if (blows > maxBlows) maxBlows = blows;
-      setCmPerBlow = calculatePenetrationSet(blows, recordUnit);
+      setCmPerBlow = calculatePenetrationSet(blows, resolvedUnit);
 
       if (hileyInput && setCmPerBlow > 0) {
         // Equivalent to 10 blows for hiley engine calculation
@@ -367,7 +385,7 @@ export function calculateDrivingLoadProfile(
     points.push({
       intervalIndex,
       depthDisplay,
-      depthDisplayUnit: recordUnit === 'FEET' ? 'ft' : 'm',
+      depthDisplayUnit: resolvedUnit === 'FEET' ? 'ft' : 'm',
       cumulativePenetrationM,
       actualDepthM,
       elevationM,
@@ -413,7 +431,7 @@ export function calculateDrivingLoadProfile(
     : null;
 
   return {
-    recordUnit,
+    recordUnit: resolvedUnit,
     recordScope: resolvedScope,
     isWindowScope,
     points,

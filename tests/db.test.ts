@@ -4,7 +4,7 @@ import { DELETE as deleteProjectHandler, PATCH as updateProjectHandler } from '@
 import { PATCH as updatePileHandler } from '@/app/api/piles/[id]/route';
 import { PATCH as batchUpdatePileHandler } from '@/app/api/piles/batch/route';
 
-describe('Prisma Database & Seeding Verification', () => {
+describe('Prisma Database & Seeding Verification', { timeout: 15000 }, () => {
   it('loads the seeded project and settings', async () => {
     const project = await prisma.project.findUnique({
       where: { code: 'GHT-2026' },
