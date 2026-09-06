@@ -79,6 +79,8 @@ model DrivingRecord {
   measuredLast10Cm  Float    // Measured set for last 10 blows in cm
   measuredTempCCm   Float?   // Measured C in cm
   drivenLengthM     Float    // Total driven length in meters
+  totalPileLengthM  Float?   // Total specified/supplied pile length in meters
+  stickUpLengthM    Float?   // Pile head stick-up above ground level in meters (negative if driven below ground with dolly)
   cutOffLevelM      Float?   // Cut-off elevation
   groundLevelM      Float?   // Ground surface elevation
   tipLevelM         Float?   // Pile tip elevation
