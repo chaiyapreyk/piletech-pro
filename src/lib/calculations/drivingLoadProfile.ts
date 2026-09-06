@@ -293,9 +293,11 @@ export function calculateDrivingLoadProfile(
 
   const totalRawCount = rawBlows.length;
 
-  // Initial span check using default unit interval (0.3048m for FEET, 1.0m for METER)
-  const defaultIntervalM = recordUnit === 'METER' ? 1.0 : 0.3048;
-  const initialRecordedSpanM = totalRawCount * defaultIntervalM;
+  // Depth Interval Step:
+  // When recordUnit is FEET, each interval is recorded per foot (0.3048 m ~ 30 cm).
+  // When recordUnit is METER, each interval is recorded per meter (1.0 m).
+  const depthIntervalStepM = recordUnit === 'METER' ? 1.0 : 0.3048;
+  const initialRecordedSpanM = totalRawCount * depthIntervalStepM;
 
   // Smart Scope Resolution:
   // If explicitly WINDOW, or if record is NOT explicitly FULL and total recorded depth is <= 75% of driven length
@@ -308,37 +310,6 @@ export function calculateDrivingLoadProfile(
       initialRecordedSpanM <= drivenLengthM * 0.75);
 
   const resolvedScope: 'FULL' | 'WINDOW' = isWindowScope ? 'WINDOW' : 'FULL';
-
-  // Smart Depth Interval Resolution:
-  // In Thailand pile driving practice, blow count rate is typically recorded in Blow/ft,
-  // while depth intervals in the driving log may be marked either every 1 meter (e.g. 21 intervals for a 21m pile)
-  // or every 1 foot (e.g. 69 intervals for a 21m pile, or a 20ft window).
-  // This decouples the depth spacing along the Y-axis from the blow rate unit along the X-axis.
-  let depthIntervalStepM: number;
-  if (isWindowScope) {
-    depthIntervalStepM = recordUnit === 'METER' ? 1.0 : 0.3048;
-  } else {
-    // FULL scope:
-    if (
-      drivenLengthM !== null &&
-      totalRawCount > 0 &&
-      Math.abs(totalRawCount - drivenLengthM) <= 2
-    ) {
-      // 1-meter depth intervals (e.g. 21 points for 21m pile)
-      depthIntervalStepM = 1.0;
-    } else if (
-      drivenLengthM !== null &&
-      totalRawCount > 0 &&
-      Math.abs(totalRawCount * 0.3048 - drivenLengthM) <= 1.5
-    ) {
-      // 1-foot depth intervals (e.g. 69 points for 21m pile)
-      depthIntervalStepM = 0.3048;
-    } else if (recordUnit === 'METER') {
-      depthIntervalStepM = 1.0;
-    } else {
-      depthIntervalStepM = 0.3048;
-    }
-  }
 
   rawBlows.forEach((blows, idx) => {
     const intervalIndex = idx;
