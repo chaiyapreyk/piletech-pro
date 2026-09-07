@@ -18,14 +18,32 @@ import {
   Sparkles,
   Layers,
   AlertTriangle,
+  Wifi,
+  WifiOff,
 } from 'lucide-react';
 import Link from 'next/link';
 import { useToast } from '@/components/ui/ToastProvider';
+import ConfirmModal from '@/components/ui/ConfirmModal';
+import GuidedFieldModeModal from './GuidedFieldModeModal';
+import {
+  createDrivingDraft,
+  getBrowserDraftStorage,
+  readDrivingDraft,
+  removeDrivingDraft,
+  saveDrivingDraft,
+  type DrivingDraftForm,
+} from '@/lib/drivingDrafts';
+import {
+  calculateDerivedGeometry,
+  applyManualTipOverride,
+} from '@/lib/calculations/pileGeometry';
 
 interface PileData {
   id: string;
+  projectId: string;
   pileNo: string;
   gridLine: string;
+  building?: string | null;
   status: string;
   criteria?: {
     id?: string;
@@ -52,6 +70,7 @@ interface PileData {
     inspectorName?: string | null;
     notes?: string | null;
     isSetPassed: boolean;
+    updatedAt?: Date | string;
   } | null;
 }
 
@@ -131,14 +150,117 @@ export default function DrivingRecordForm({ pile }: { pile: PileData }) {
   const [notes, setNotes] = useState<string>(pile.drivingRecord?.notes || '');
   const [isSaving, setIsSaving] = useState<boolean>(false);
   const [savedSuccess, setSavedSuccess] = useState<boolean>(false);
+  const [isFieldModeOpen, setIsFieldModeOpen] = useState(false);
+  const [isDraftSaving, setIsDraftSaving] = useState(false);
+  const [isOnline, setIsOnline] = useState(true);
+  const [conflict, setConflict] = useState<{
+    serverUpdatedAt: string | null;
+  } | null>(null);
+  const [isOverwriteConfirmOpen, setIsOverwriteConfirmOpen] = useState(false);
+  const [isDiscardConfirmOpen, setIsDiscardConfirmOpen] = useState(false);
 
   // Local Draft Autosave State & Lifecycle
-  const draftKey = `piledrive_draft_${pile.id}`;
   const [hasDraft, setHasDraft] = useState(false);
   const [draftSavedTime, setDraftSavedTime] = useState<string | null>(null);
 
+  const draftIdentity = {
+    projectId: pile.projectId,
+    pileId: pile.id,
+    pileNo: pile.pileNo,
+    gridLine: pile.gridLine,
+    building: pile.building,
+  };
+  const initialServerRecordUpdatedAt = pile.drivingRecord?.updatedAt
+    ? new Date(pile.drivingRecord.updatedAt).toISOString()
+    : null;
+  const [draftServerRecordUpdatedAt, setDraftServerRecordUpdatedAt] = useState<string | null>(initialServerRecordUpdatedAt);
+
+  const getCurrentDraftForm = (): DrivingDraftForm => ({
+    blowCounts,
+    recordUnit,
+    recordScope,
+    windowLength,
+    measuredLast10,
+    measuredTempC,
+    totalPileLength,
+    isStickUpAuto,
+    manualStickUpLength,
+    groundLevel,
+    cutOffLevel,
+    isTipLevelAuto,
+    manualTipLevel,
+    inspectorName,
+    notes,
+  });
+
+  const applyDraftForm = (draft: DrivingDraftForm) => {
+    setBlowCounts(draft.blowCounts);
+    setRecordUnit(draft.recordUnit);
+    setRecordScope(draft.recordScope);
+    setWindowLength(draft.windowLength);
+    setMeasuredLast10(draft.measuredLast10);
+    setMeasuredTempC(draft.measuredTempC);
+    setTotalPileLength(draft.totalPileLength);
+    setIsStickUpAuto(draft.isStickUpAuto);
+    setManualStickUpLength(draft.manualStickUpLength);
+    setGroundLevel(draft.groundLevel);
+    setCutOffLevel(draft.cutOffLevel);
+    setIsTipLevelAuto(draft.isTipLevelAuto);
+    setManualTipLevel(draft.manualTipLevel);
+    setInspectorName(draft.inspectorName);
+    setNotes(draft.notes);
+  };
+
+  const handleSaveDraft = async () => {
+    const storage = getBrowserDraftStorage();
+    if (!storage) {
+      toast.error('Draft storage is unavailable in this browser');
+      return;
+    }
+
+    setIsDraftSaving(true);
+    try {
+      saveDrivingDraft(storage, createDrivingDraft({
+        ...draftIdentity,
+        form: getCurrentDraftForm(),
+        serverRecordUpdatedAt: draftServerRecordUpdatedAt,
+      }));
+      setHasDraft(true);
+      setDraftSavedTime(new Date().toLocaleTimeString());
+      toast.success('Draft saved on this device');
+    } catch {
+      toast.error('Unable to save Draft on this device');
+    } finally {
+      setIsDraftSaving(false);
+    }
+  };
+
+  const restoreStoredDraft = () => {
+    const storage = getBrowserDraftStorage();
+    const saved = storage ? readDrivingDraft(storage, draftIdentity) : null;
+    if (!saved) {
+      toast.info('No Draft was found for this pile');
+      return;
+    }
+    applyDraftForm(saved.form);
+    setDraftServerRecordUpdatedAt(saved.serverRecordUpdatedAt);
+    setHasDraft(false);
+    toast.success('Draft restored');
+  };
+
+  const discardStoredDraft = () => {
+    const storage = getBrowserDraftStorage();
+    if (storage) removeDrivingDraft(storage, draftIdentity);
+    setHasDraft(false);
+    setDraftSavedTime(null);
+    setDraftServerRecordUpdatedAt(initialServerRecordUpdatedAt);
+    toast.info('Draft discarded');
+  };
+
   // Check for existing draft on mount
+  /*
   React.useEffect(() => {
+    if (false) return;
     try {
       const saved = localStorage.getItem(draftKey);
       if (saved) {
@@ -150,9 +272,41 @@ export default function DrivingRecordForm({ pile }: { pile: PileData }) {
       }
     } catch {}
   }, [draftKey]);
+  */
+
+  React.useEffect(() => {
+    const storage = getBrowserDraftStorage();
+    const saved = storage ? readDrivingDraft(storage, draftIdentity) : null;
+    setHasDraft(Boolean(saved));
+    setDraftSavedTime(saved ? new Date(saved.savedAt).toLocaleTimeString() : null);
+    setDraftServerRecordUpdatedAt(saved?.serverRecordUpdatedAt ?? initialServerRecordUpdatedAt);
+  }, [pile.id, pile.projectId]);
+
+  React.useEffect(() => {
+    const updateOnlineState = () => setIsOnline(window.navigator.onLine);
+    updateOnlineState();
+    window.addEventListener('online', updateOnlineState);
+    window.addEventListener('offline', updateOnlineState);
+    return () => {
+      window.removeEventListener('online', updateOnlineState);
+      window.removeEventListener('offline', updateOnlineState);
+    };
+  }, []);
+
+  React.useEffect(() => {
+    const dismissalKey = `piletech:field-mode:dismissed:${pile.id}`;
+    const storage = getBrowserDraftStorage();
+    const hasStoredDraft = storage ? Boolean(readDrivingDraft(storage, draftIdentity)) : false;
+    if (!hasStoredDraft && window.matchMedia('(max-width: 767px)').matches && !sessionStorage.getItem(dismissalKey)) {
+      setIsFieldModeOpen(true);
+    }
+  }, [pile.id]);
 
   // Restore draft handler
   const handleRestoreDraft = () => {
+    restoreStoredDraft();
+    return;
+    /*
     try {
       const saved = localStorage.getItem(draftKey);
       if (saved) {
@@ -174,19 +328,58 @@ export default function DrivingRecordForm({ pile }: { pile: PileData }) {
     } catch {
       toast.error('ไม่สามารถกู้คืนข้อมูลร่างได้');
     }
+    */
   };
 
   const handleDiscardDraft = () => {
+    setIsDiscardConfirmOpen(true);
+    return;
+    /*
     try {
       localStorage.removeItem(draftKey);
       setHasDraft(false);
       toast.info('ล้างข้อมูลร่างเรียบร้อยแล้ว');
     } catch {}
+    */
+  };
+
+  const confirmDiscardDraft = () => {
+    discardStoredDraft();
+    setIsDiscardConfirmOpen(false);
+  };
+
+  const closeFieldMode = () => {
+    setIsFieldModeOpen(false);
+    sessionStorage.setItem(`piletech:field-mode:dismissed:${pile.id}`, '1');
+  };
+
+  const handleUseServer = () => {
+    const storage = getBrowserDraftStorage();
+    if (storage) removeDrivingDraft(storage, draftIdentity);
+    setConflict(null);
+    window.location.reload();
+  };
+
+  const handleOverwriteWithDraft = () => {
+    if (!conflict) return;
+    setIsOverwriteConfirmOpen(true);
+  };
+
+  const confirmOverwriteWithDraft = () => {
+    if (!conflict) return;
+    const latestServerTimestamp = conflict.serverUpdatedAt;
+    setIsOverwriteConfirmOpen(false);
+    setConflict(null);
+    void handleSubmit(undefined, {
+      expectedRecordUpdatedAt: latestServerTimestamp,
+      forceOverwrite: true,
+    });
   };
 
   // Autosave to localStorage on changes
+  /*
   React.useEffect(() => {
-    if (blowCounts.length > 0 || notes) {
+    if (false && (blowCounts.length > 0 || notes)) {
       const timeout = setTimeout(() => {
         try {
           const draftData = {
@@ -209,32 +402,48 @@ export default function DrivingRecordForm({ pile }: { pile: PileData }) {
       return () => clearTimeout(timeout);
     }
   }, [blowCounts, recordUnit, recordScope, windowLength, measuredLast10, measuredTempC, totalPileLength, groundLevel, cutOffLevel, inspectorName, notes, draftKey]);
+  */
 
-  // Derived Engineering Calculations
+  // Derived Geotechnical Engineering Calculations via deep pileGeometry module
   const totalLengthNum = Number(totalPileLength) || 0;
   const stickUpNum = activeStickUp;
   const groundLevelNum = Number(groundLevel) || 0;
   const cutOffLevelNum = Number(cutOffLevel) || 0;
 
-  // Actual driven depth in soil
-  const computedDrivenDepth = Number((totalLengthNum - stickUpNum).toFixed(2));
-  // Computed Tip Level
-  const computedTipLevel = Number((groundLevelNum - computedDrivenDepth).toFixed(2));
-  // Actual top of pile level
-  const computedTopLevel = Number((groundLevelNum + stickUpNum).toFixed(2));
-  // Cut-off waste length
-  const computedCutWaste = Number((computedTopLevel - cutOffLevelNum).toFixed(2));
+  const derivedGeometry = calculateDerivedGeometry({
+    totalPileLengthM: totalLengthNum,
+    stickUpLengthM: stickUpNum,
+    groundLevelM: groundLevelNum,
+    cutOffLevelM: cutOffLevelNum,
+  });
 
-  // Current active values (Auto vs Manual)
-  const activeTipLevel = isTipLevelAuto ? computedTipLevel : Number(manualTipLevel) || 0;
-  const activeDrivenDepth = isTipLevelAuto ? computedDrivenDepth : Number((groundLevelNum - activeTipLevel).toFixed(2));
+  const activeGeometry = isTipLevelAuto
+    ? derivedGeometry
+    : applyManualTipOverride(derivedGeometry, Number(manualTipLevel) || 0, groundLevelNum);
+
+  const computedDrivenDepth = derivedGeometry.drivenDepthM;
+  const computedTipLevel = derivedGeometry.tipLevelM ?? 0;
+  const computedTopLevel = derivedGeometry.actualTopLevelM ?? 0;
+  const computedCutWaste = activeGeometry.cutOffWasteM ?? 0;
+
+  const activeTipLevel = activeGeometry.tipLevelM ?? 0;
+  const activeDrivenDepth = activeGeometry.drivenDepthM;
 
   const targetSet = pile.criteria?.targetSet10BlowsCm ?? 7.0;
   const isPassed = measuredLast10 > 0 && measuredLast10 <= targetSet;
   const isEvaluated = measuredLast10 > 0;
 
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
+  const handleSubmit = async (
+    e?: React.FormEvent,
+    options?: { expectedRecordUpdatedAt?: string | null; forceOverwrite?: boolean }
+  ) => {
+    e?.preventDefault();
+    const currentlyOnline = window.navigator.onLine;
+    if (!currentlyOnline) {
+      setIsOnline(false);
+      toast.error('Save Record is unavailable while offline. Save a Draft instead.');
+      return;
+    }
     setIsSaving(true);
     setSavedSuccess(false);
 
@@ -259,18 +468,24 @@ export default function DrivingRecordForm({ pile }: { pile: PileData }) {
           tipLevelM: activeTipLevel,
           inspectorName,
           notes,
+          expectedRecordUpdatedAt: options?.expectedRecordUpdatedAt ?? draftServerRecordUpdatedAt,
+          forceOverwrite: options?.forceOverwrite ?? false,
         }),
       });
 
       if (res.ok) {
         setSavedSuccess(true);
-        try {
-          localStorage.removeItem(draftKey);
-        } catch {}
+        const storage = getBrowserDraftStorage();
+        if (storage) removeDrivingDraft(storage, draftIdentity);
+        setHasDraft(false);
         toast.success(`บันทึกผลการตอกเสาเข็ม ${pile.pileNo} สำเร็จ`);
         setTimeout(() => router.push('/piles'), 1000);
       } else {
         const data = await res.json().catch(() => ({}));
+        if (res.status === 409 && data.code === 'DRIVING_RECORD_CONFLICT') {
+          setConflict({ serverUpdatedAt: data.serverUpdatedAt ?? null });
+          return;
+        }
         throw new Error(data.error || 'บันทึกข้อมูลการตอกไม่สำเร็จ');
       }
     } catch (err: any) {
@@ -292,9 +507,18 @@ export default function DrivingRecordForm({ pile }: { pile: PileData }) {
           <ArrowLeft className="w-3.5 h-3.5" />
           <span>กลับหน้ารายการเสาเข็ม</span>
         </Link>
-        <span className="text-xs bg-slate-200 text-slate-700 px-2.5 py-1 rounded font-mono font-bold">
-          ID: {pile.pileNo} ({pile.gridLine})
-        </span>
+        <div className="flex items-center gap-2">
+          <span className={`hidden items-center gap-1 rounded px-2 py-1 text-[10px] font-bold sm:flex ${isOnline ? 'bg-emerald-50 text-emerald-700' : 'bg-rose-50 text-rose-700'}`}>
+            {isOnline ? <Wifi className="h-3 w-3" /> : <WifiOff className="h-3 w-3" />}
+            {isOnline ? 'Online' : 'Offline'}
+          </span>
+          <button type="button" onClick={() => setIsFieldModeOpen(true)} className="hidden rounded-lg bg-slate-900 px-3 py-2 text-xs font-black text-white shadow-sm hover:bg-slate-700 sm:inline-flex">
+            Field Mode
+          </button>
+          <span className="text-xs bg-slate-200 text-slate-700 px-2.5 py-1 rounded font-mono font-bold">
+            ID: {pile.pileNo} ({pile.gridLine})
+          </span>
+        </div>
       </div>
 
       {/* Draft Restore Notification Banner */}
@@ -812,7 +1036,12 @@ export default function DrivingRecordForm({ pile }: { pile: PileData }) {
       </div>
 
       {/* Action Buttons */}
-      <div className="flex items-center justify-end gap-3 pt-2">
+      <div className="flex flex-wrap items-center justify-end gap-3 pt-2">
+        {!isOnline && (
+          <div className="mr-auto flex items-center gap-1.5 text-xs font-bold text-rose-700">
+            <WifiOff className="h-4 w-4" /> Offline: Save Draft is available; Save Record will return when connected.
+          </div>
+        )}
         <Link
           href="/piles"
           className="px-5 py-2.5 rounded-xl border border-slate-300 text-xs font-bold text-slate-600 hover:bg-slate-50"
@@ -820,8 +1049,17 @@ export default function DrivingRecordForm({ pile }: { pile: PileData }) {
           ยกเลิก
         </Link>
         <button
+          type="button"
+          onClick={() => void handleSaveDraft()}
+          disabled={isDraftSaving}
+          className="rounded-xl border border-slate-300 px-5 py-2.5 text-xs font-bold text-slate-700 hover:bg-slate-50 disabled:opacity-50"
+        >
+          {isDraftSaving ? 'Saving Draft...' : 'Save Draft'}
+        </button>
+        <button
           type="submit"
-          disabled={isSaving}
+          disabled={isSaving || !isOnline}
+          title={!isOnline ? 'Save Record requires an online connection' : undefined}
           className="bg-amber-500 hover:bg-amber-600 disabled:opacity-50 text-slate-950 font-black px-6 py-2.5 rounded-xl text-xs flex items-center gap-2 shadow-md transition-transform active:scale-95"
         >
           {isSaving ? (
@@ -839,6 +1077,60 @@ export default function DrivingRecordForm({ pile }: { pile: PileData }) {
           )}
         </button>
       </div>
+
+      <GuidedFieldModeModal
+        isOpen={isFieldModeOpen}
+        pileLabel={`${pile.pileNo} (${pile.gridLine})`}
+        blowCounts={blowCounts}
+        onChange={setBlowCounts}
+        recordUnit={recordUnit}
+        recordScope={recordScope}
+        windowLength={windowLength}
+        onSaveDraft={handleSaveDraft}
+        isDraftSaving={isDraftSaving}
+        onClose={closeFieldMode}
+      />
+
+      <ConfirmModal
+        isOpen={isDiscardConfirmOpen}
+        onClose={() => setIsDiscardConfirmOpen(false)}
+        onConfirm={confirmDiscardDraft}
+        title="Discard Draft?"
+        message="Remove the saved Draft for this pile from this browser?"
+        confirmText="Discard"
+        isDestructive
+      />
+
+      {conflict && (
+        <div className="fixed inset-0 z-[60] flex items-center justify-center bg-slate-950/70 p-4" role="dialog" aria-modal="true" aria-label="Driving record conflict">
+          <div className="w-full max-w-md rounded-2xl bg-white p-6 shadow-2xl">
+            <h2 className="text-lg font-black text-slate-900">Server record changed</h2>
+            <p className="mt-2 text-sm text-slate-600">Your Draft was not submitted because this pile was updated elsewhere.</p>
+            <div className="mt-4 space-y-2 rounded-xl bg-slate-50 p-3 text-xs font-mono text-slate-700">
+              <p>Local version: {draftServerRecordUpdatedAt || 'new record'}</p>
+              <p>Server version: {conflict.serverUpdatedAt || 'unavailable'}</p>
+            </div>
+            <div className="mt-5 grid gap-2 sm:grid-cols-2">
+              <button type="button" onClick={handleUseServer} className="rounded-xl border border-slate-300 px-3 py-3 text-xs font-black text-slate-700">Use Server</button>
+              <button type="button" onClick={handleOverwriteWithDraft} className="rounded-xl bg-amber-500 px-3 py-3 text-xs font-black text-slate-950">Review Overwrite</button>
+            </div>
+            <button type="button" onClick={() => setConflict(null)} className="mt-3 w-full rounded-xl px-3 py-2 text-xs font-bold text-slate-500 hover:bg-slate-50">Keep editing</button>
+          </div>
+        </div>
+      )}
+
+      {isOverwriteConfirmOpen && conflict && (
+        <div className="fixed inset-0 z-[70] flex items-center justify-center bg-slate-950/80 p-4" role="dialog" aria-modal="true" aria-label="Confirm overwrite">
+          <div className="w-full max-w-md rounded-2xl border-2 border-amber-400 bg-white p-6 shadow-2xl">
+            <h2 className="text-lg font-black text-slate-900">Confirm overwrite</h2>
+            <p className="mt-2 text-sm text-slate-600">Overwrite the latest server record with your Draft? This cannot be undone.</p>
+            <div className="mt-5 grid grid-cols-2 gap-2">
+              <button type="button" onClick={() => setIsOverwriteConfirmOpen(false)} className="rounded-xl border border-slate-300 px-3 py-3 text-xs font-black text-slate-700">Cancel</button>
+              <button type="button" onClick={confirmOverwriteWithDraft} className="rounded-xl bg-rose-600 px-3 py-3 text-xs font-black text-white">Overwrite</button>
+            </div>
+          </div>
+        </div>
+      )}
     </form>
   );
 }

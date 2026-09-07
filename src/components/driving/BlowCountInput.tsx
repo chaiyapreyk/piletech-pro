@@ -25,6 +25,10 @@ import {
 } from 'lucide-react';
 import RollingWheel from '@/components/ui/RollingWheel';
 import ConfirmModal from '@/components/ui/ConfirmModal';
+import {
+  appendDrivingInterval,
+  updateDrivingInterval,
+} from '@/lib/drivingIntervals';
 
 interface Props {
   blowCounts: (number | null)[];
@@ -146,14 +150,12 @@ export default function BlowCountInput({
   const isWindowComplete = scope === 'WINDOW' && currentDrivenCount >= windowLength;
 
   const handleAddInterval = (valueToAdd: number) => {
-    if (!isNaN(valueToAdd) && valueToAdd > 0) {
-      onChange([...blowCounts, valueToAdd]);
-    }
+    onChange(appendDrivingInterval(blowCounts, valueToAdd));
   };
 
   // Quick skip interval (when driving too fast or missed recording)
   const handleSkipInterval = () => {
-    onChange([...blowCounts, null]);
+    onChange(appendDrivingInterval(blowCounts, null));
   };
 
   const handleQuickAdd = (increment: number) => {
@@ -161,7 +163,7 @@ export default function BlowCountInput({
     const lastValid = [...blowCounts].reverse().find((v): v is number => typeof v === 'number' && v > 0) ?? 20;
     const newVal = Math.max(1, lastValid + increment);
     setWheelBlowValue(newVal);
-    onChange([...blowCounts, newVal]);
+    onChange(appendDrivingInterval(blowCounts, newVal));
   };
 
   const handleRemoveLast = () => {
@@ -171,13 +173,7 @@ export default function BlowCountInput({
   };
 
   const handleUpdateInterval = (index: number, val: number | null) => {
-    const updated = [...blowCounts];
-    // If updating a slot beyond current array length, fill gaps with null
-    while (updated.length < index) {
-      updated.push(null);
-    }
-    updated[index] = val;
-    onChange(updated);
+    onChange(updateDrivingInterval(blowCounts, index, val));
   };
 
   // Toggle selection for bulk deletion

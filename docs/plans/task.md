@@ -26,6 +26,5 @@
 | Task 22: Record Blow/ft & Configurable Scope (Last 20 ft) | PENDING | Unit toggle m/ft, scope window, offset plotting in logger & chart |
 | Task 23: Multi-Project & Building Switcher UI | PENDING | Switcher in header, new project/building modal |
 | Task 24: End-to-End Verification & Git Push | PENDING | Vitest, curl verification, commit and push to GitHub |
-
-
+| Task 25: Guided Field Mode & Browser Drafts Inbox | DONE | Mobile Field Mode, explicit per-pile Draft storage, Dashboard inbox, offline guard/cache, timestamp conflict protection, and 83/83 tests plus production build verified |
 

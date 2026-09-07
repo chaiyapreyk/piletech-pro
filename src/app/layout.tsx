@@ -2,6 +2,9 @@ import type { Metadata, Viewport } from "next";
 import "./globals.css";
 import Navbar from "@/components/Navbar";
 import { ToastProvider } from "@/components/ui/ToastProvider";
+import TopProgressBar from "@/components/navigation/TopProgressBar";
+import { Suspense } from "react";
+import ServiceWorkerRegistrar from "@/components/ServiceWorkerRegistrar";
 
 export const metadata: Metadata = {
   title: "Pile Engineering & QA/QC Suite",
@@ -25,7 +28,11 @@ export default function RootLayout({
     <html lang="th">
       <body className="min-h-screen antialiased bg-slate-100 text-slate-900 flex flex-col">
         <ToastProvider>
+          <Suspense fallback={null}>
+            <TopProgressBar />
+          </Suspense>
           <Navbar />
+          <ServiceWorkerRegistrar />
           <div className="flex-1 max-w-7xl w-full mx-auto p-4 sm:p-6 lg:p-8">
             {children}
           </div>

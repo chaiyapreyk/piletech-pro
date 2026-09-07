@@ -1,6 +1,7 @@
 import { getActiveProject } from '@/lib/activeProject';
 import ProjectKpiCards from '@/components/dashboard/ProjectKpiCards';
 import PileTableGrid from '@/components/dashboard/PileTableGrid';
+import DashboardDraftsInbox from '@/components/dashboard/DashboardDraftsInbox';
 import Link from 'next/link';
 import { Calculator, ClipboardList, ShieldCheck, FileSpreadsheet } from 'lucide-react';
 
@@ -82,6 +83,8 @@ export default async function DashboardPage() {
         qcWarningCount={qcWarningCount}
         qcCriticalCount={qcCriticalCount}
       />
+
+      <DashboardDraftsInbox projectId={project?.id ?? null} />
 
       {/* Pile Status Grid */}
       <PileTableGrid piles={piles} />
