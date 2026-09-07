@@ -134,17 +134,7 @@ export function calculatePenetrationSet(blows: number, recordUnit: 'FEET' | 'MET
   return recordUnit === 'FEET' ? 30.48 / blows : 100 / blows;
 }
 
-/**
- * Formats an elevation value in meters with appropriate +/- sign (e.g. "+3.00 m", "-18.00 m", "0.00 m").
- * Avoids broken display like "+-18.00 m".
- */
-export function formatElevation(elev: number | null | undefined): string {
-  if (elev === null || elev === undefined || isNaN(Number(elev))) return '-';
-  const num = Number(elev);
-  if (num > 0) return `+${num.toFixed(2)} m`;
-  if (num < 0) return `${num.toFixed(2)} m`;
-  return `0.00 m`;
-}
+export { formatElevation } from './pileGeometry';
 
 /**
  * Validates whether the assigned driving criteria has all required fields for Hiley calculation.

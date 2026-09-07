@@ -25,6 +25,7 @@ export interface PileData {
   } | null;
   drivingRecord?: {
     id: string;
+    pileId?: string;
     penetrationBlows?: string | null;
     recordUnit?: string;
     recordScope?: string;
@@ -45,6 +46,7 @@ export interface PileData {
   } | null;
   qcInspection?: {
     id: string;
+    pileId?: string;
     netDeviationCm: number | null;
     deviationStatus: string;
     deltaXCm?: number | null;

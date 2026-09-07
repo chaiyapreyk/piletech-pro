@@ -1,6 +1,6 @@
 'use client';
 
-import React from 'react';
+import React, { useState, useMemo } from 'react';
 import Link from 'next/link';
 import {
   Clock,
@@ -40,6 +40,39 @@ export default function MatrixDetailedTable({
   handleOpenEdit,
   onPileDeleted,
 }: MatrixDetailedTableProps) {
+  const [displayLimit, setDisplayLimit] = useState<number>(50);
+
+  // Precompute and memoize row metrics to eliminate unmemoized JSON.parse during render
+  const memoizedRows = useMemo(() => {
+    return filteredPiles.map((pile) => {
+      const isDriven = pile.drivingRecord !== null && pile.drivingRecord !== undefined;
+      const isSetPassed = pile.drivingRecord?.isSetPassed;
+      const qcStatus = pile.qcInspection?.deviationStatus;
+      const drivenM = pile.drivingRecord?.drivenLengthM;
+      const drivenFt = drivenM ? (drivenM * 3.28084).toFixed(1) : null;
+      const recordUnit =
+        pile.drivingRecord?.recordUnit?.toUpperCase() === 'METER' ? 'METER' : 'FEET';
+      const { avgBlowsFt, avgBlowsM } = calculateAverageBlows(
+        pile.drivingRecord?.penetrationBlows,
+        pile.drivingRecord?.recordUnit
+      );
+
+      return {
+        pile,
+        isDriven,
+        isSetPassed,
+        qcStatus,
+        drivenM,
+        drivenFt,
+        recordUnit,
+        avgBlowsFt,
+        avgBlowsM,
+      };
+    });
+  }, [filteredPiles]);
+
+  const effectiveLimit = isBulkMode ? memoizedRows.length : displayLimit;
+  const visibleRows = memoizedRows.slice(0, effectiveLimit);
   return (
     <div className="bg-white rounded-xl border border-slate-200 overflow-hidden shadow-xs">
       <div className="overflow-x-auto">
@@ -79,20 +112,19 @@ export default function MatrixDetailedTable({
             </tr>
           </thead>
           <tbody className="divide-y divide-slate-100">
-            {filteredPiles.map((pile) => {
-              const isDriven = pile.drivingRecord !== null && pile.drivingRecord !== undefined;
-              const isSetPassed = pile.drivingRecord?.isSetPassed;
-              const qcStatus = pile.qcInspection?.deviationStatus;
-              const drivenM = pile.drivingRecord?.drivenLengthM;
-              const drivenFt = drivenM ? (drivenM * 3.28084).toFixed(1) : null;
-              const recordUnit =
-                pile.drivingRecord?.recordUnit?.toUpperCase() === 'METER' ? 'METER' : 'FEET';
+            {visibleRows.map((item) => {
+              const {
+                pile,
+                isDriven,
+                isSetPassed,
+                qcStatus,
+                drivenM,
+                drivenFt,
+                recordUnit,
+                avgBlowsFt,
+                avgBlowsM,
+              } = item;
               const isSelected = selectedPileIds.has(pile.id);
-
-              const { avgBlowsFt, avgBlowsM } = calculateAverageBlows(
-                pile.drivingRecord?.penetrationBlows,
-                pile.drivingRecord?.recordUnit
-              );
 
               return (
                 <tr
@@ -292,6 +324,30 @@ export default function MatrixDetailedTable({
           </tbody>
         </table>
       </div>
+      {memoizedRows.length > effectiveLimit && (
+        <div className="p-3 bg-slate-50 border-t border-slate-200 flex flex-col sm:flex-row items-center justify-between gap-2 text-xs">
+          <span className="text-slate-500">
+            กำลังแสดง <strong className="text-slate-800 font-mono">{visibleRows.length}</strong> จากทั้งหมด{' '}
+            <strong className="text-slate-800 font-mono">{memoizedRows.length}</strong> ต้น
+          </span>
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={() => setDisplayLimit((prev) => prev + 50)}
+              className="px-3 py-1.5 bg-white hover:bg-slate-100 border border-slate-300 rounded-lg text-slate-700 font-bold transition shadow-2xs cursor-pointer"
+            >
+              แสดงเพิ่มอีก 50 ต้น (+50)
+            </button>
+            <button
+              type="button"
+              onClick={() => setDisplayLimit(memoizedRows.length)}
+              className="px-3 py-1.5 bg-amber-500 hover:bg-amber-600 text-slate-950 rounded-lg font-bold transition shadow-2xs cursor-pointer"
+            >
+              แสดงทั้งหมด ({memoizedRows.length} ต้น)
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

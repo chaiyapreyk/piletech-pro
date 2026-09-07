@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useTransition } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import {
@@ -67,7 +67,14 @@ export default function PileNumberMatrix({
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedPile, setSelectedPile] = useState<PileData | null>(null);
   const [viewMode, setViewMode] = useState<'TABLE_10' | 'DENSE_HEATMAP' | 'CARDS' | 'DETAILED_TABLE'>('TABLE_10');
+  const [isPendingView, startTransition] = useTransition();
   const [selectedRange, setSelectedRange] = useState<string>('ALL');
+
+  const handleSetViewMode = (mode: 'TABLE_10' | 'DENSE_HEATMAP' | 'CARDS' | 'DETAILED_TABLE') => {
+    startTransition(() => {
+      setViewMode(mode);
+    });
+  };
 
   // Confirmation Dialog State
   const [confirmDialog, setConfirmDialog] = useState<{
@@ -707,7 +714,7 @@ export default function PileNumberMatrix({
           <div className="flex items-center bg-slate-100 p-1 rounded-lg gap-1 text-xs">
             <button
               type="button"
-              onClick={() => setViewMode('TABLE_10')}
+              onClick={() => handleSetViewMode('TABLE_10')}
               title="ตารางกริดแถวละ 10 ต้น (อ่านง่ายมาตรฐาน)"
               className={`flex items-center gap-1 px-2.5 py-1 rounded-md font-bold transition ${
                 viewMode === 'TABLE_10'
@@ -721,7 +728,7 @@ export default function PileNumberMatrix({
 
             <button
               type="button"
-              onClick={() => setViewMode('DENSE_HEATMAP')}
+              onClick={() => handleSetViewMode('DENSE_HEATMAP')}
               title="ตารางกริดความหนาแน่นสูง (สำหรับเข็ม 300+ ต้น)"
               className={`flex items-center gap-1 px-2.5 py-1 rounded-md font-bold transition ${
                 viewMode === 'DENSE_HEATMAP'
@@ -735,7 +742,7 @@ export default function PileNumberMatrix({
 
             <button
               type="button"
-              onClick={() => setViewMode('CARDS')}
+              onClick={() => handleSetViewMode('CARDS')}
               title="การ์ดขยายรายละเอียด"
               className={`flex items-center gap-1 px-2.5 py-1 rounded-md font-bold transition ${
                 viewMode === 'CARDS'
@@ -749,7 +756,7 @@ export default function PileNumberMatrix({
 
             <button
               type="button"
-              onClick={() => setViewMode('DETAILED_TABLE')}
+              onClick={() => handleSetViewMode('DETAILED_TABLE')}
               title="ตารางรายละเอียดข้อมูลวิศวกรรมเชิงลึก (รวมทุกคอลัมน์)"
               className={`flex items-center gap-1 px-2.5 py-1 rounded-md font-bold transition ${
                 viewMode === 'DETAILED_TABLE'

@@ -1,4 +1,8 @@
 import { describe, it, expect } from 'vitest';
+import {
+  calculateDerivedGeometry,
+  applyManualTipOverride,
+} from '../../src/lib/calculations/pileGeometry';
 
 describe('Driving Log with Skipped Intervals and Blow/ft Default', () => {
   it('correctly handles penetration logs with skipped (null) intervals', () => {
@@ -72,49 +76,91 @@ describe('Driving Log with Skipped Intervals and Blow/ft Default', () => {
 });
 
 describe('Tip Level & Engineering Elevations Calculations', () => {
-  it('correctly calculates actual driven depth and tip level with standard stick-up', () => {
-    const totalPileLength = 21.0; // 21.00 m
-    const stickUpLength = 0.5;   // +0.50 m above ground
-    const groundLevel = 3.0;     // +3.00 m MSL
-    const cutOffLevel = 2.5;     // +2.50 m MSL
+  it('correctly calculates actual driven depth and tip level with standard stick-up via pileGeometry module', () => {
+    const geo = calculateDerivedGeometry({
+      totalPileLengthM: 21.0, // 21.00 m
+      stickUpLengthM: 0.5,    // +0.50 m above ground
+      groundLevelM: 3.0,      // +3.00 m MSL
+      cutOffLevelM: 2.5,      // +2.50 m MSL
+    });
 
     // Driven depth in soil = L_pile - h_stick = 21.0 - 0.5 = 20.50 m
-    const drivenDepth = Number((totalPileLength - stickUpLength).toFixed(2));
-    expect(drivenDepth).toBe(20.5);
+    expect(geo.drivenDepthM).toBe(20.5);
+    expect(geo.isFollowerDriven).toBe(false);
+    expect(geo.followerDepthM).toBe(0);
 
     // Tip level = GL - Driven Depth = 3.00 - 20.50 = -17.50 m MSL
-    const tipLevel = Number((groundLevel - drivenDepth).toFixed(2));
-    expect(tipLevel).toBe(-17.5);
+    expect(geo.tipLevelM).toBe(-17.5);
 
     // Actual top of pile = GL + h_stick = 3.00 + 0.50 = +3.50 m MSL
-    const actualTopLevel = Number((groundLevel + stickUpLength).toFixed(2));
-    expect(actualTopLevel).toBe(3.5);
+    expect(geo.actualTopLevelM).toBe(3.5);
 
     // Cut-off waste = Top Level - COL = 3.50 - 2.50 = 1.00 m
-    const cutWaste = Number((actualTopLevel - cutOffLevel).toFixed(2));
-    expect(cutWaste).toBe(1.0);
+    expect(geo.cutOffWasteM).toBe(1.0);
+
+    // Formatted strings with explicit signs
+    expect(geo.formatted.tipLevel).toBe('-17.50 m');
+    expect(geo.formatted.actualTopLevel).toBe('+3.50 m');
+    expect(geo.formatted.groundLevel).toBe('+3.00 m');
+    expect(geo.formatted.cutOffLevel).toBe('+2.50 m');
+    expect(geo.formatted.drivenDepth).toBe('20.50 m');
+    expect(geo.formatted.cutOffWaste).toBe('1.00 m');
   });
 
-  it('correctly handles dolly / follower penetration (negative stick-up)', () => {
-    const totalPileLength = 20.0; // 20.00 m
-    const stickUpLength = -0.4;  // -0.40 m (driven 0.4m below ground surface)
-    const groundLevel = 2.0;     // +2.00 m MSL
-    const cutOffLevel = 1.5;     // +1.50 m MSL
+  it('correctly handles dolly / follower penetration (negative stick-up) via pileGeometry module', () => {
+    const geo = calculateDerivedGeometry({
+      totalPileLengthM: 20.0, // 20.00 m
+      stickUpLengthM: -0.4,   // -0.40 m (driven 0.4m below ground surface)
+      groundLevelM: 2.0,      // +2.00 m MSL
+      cutOffLevelM: 1.5,      // +1.50 m MSL
+    });
 
     // Driven depth = 20.0 - (-0.4) = 20.40 m
-    const drivenDepth = Number((totalPileLength - stickUpLength).toFixed(2));
-    expect(drivenDepth).toBe(20.4);
+    expect(geo.drivenDepthM).toBe(20.4);
+    expect(geo.isFollowerDriven).toBe(true);
+    expect(geo.followerDepthM).toBe(0.4);
 
     // Tip level = 2.00 - 20.40 = -18.40 m MSL
-    const tipLevel = Number((groundLevel - drivenDepth).toFixed(2));
-    expect(tipLevel).toBe(-18.4);
+    expect(geo.tipLevelM).toBe(-18.4);
 
     // Top level = 2.00 + (-0.40) = +1.60 m MSL
-    const actualTopLevel = Number((groundLevel + stickUpLength).toFixed(2));
-    expect(actualTopLevel).toBe(1.6);
+    expect(geo.actualTopLevelM).toBe(1.6);
 
     // Cut-off waste = 1.60 - 1.50 = 0.10 m
-    const cutWaste = Number((actualTopLevel - cutOffLevel).toFixed(2));
-    expect(cutWaste).toBe(0.1);
+    expect(geo.cutOffWasteM).toBe(0.1);
+  });
+
+  it('correctly applies manual tip level override and reconciles driven depth', () => {
+    const derived = calculateDerivedGeometry({
+      totalPileLengthM: 21.0,
+      stickUpLengthM: 0.5,
+      groundLevelM: 3.0,
+      cutOffLevelM: 2.5,
+    });
+    expect(derived.tipLevelM).toBe(-17.5);
+    expect(derived.isTipDerived).toBe(true);
+
+    // Surveyor measured tip level at -18.00 m
+    const overridden = applyManualTipOverride(derived, -18.0, 3.0);
+    expect(overridden.tipLevelM).toBe(-18.0);
+    expect(overridden.isTipDerived).toBe(false);
+    expect(overridden.drivenDepthM).toBe(21.0); // GL - manualTip = 3.0 - (-18.0) = 21.0m
+    expect(overridden.formatted.tipLevel).toBe('-18.00 m');
+  });
+
+  it('handles missing ground level or cut-off level safely', () => {
+    const geo = calculateDerivedGeometry({
+      totalPileLengthM: 20.0,
+      stickUpLengthM: 0.5,
+      groundLevelM: null,
+      cutOffLevelM: null,
+    });
+
+    expect(geo.drivenDepthM).toBe(19.5);
+    expect(geo.tipLevelM).toBeNull();
+    expect(geo.actualTopLevelM).toBeNull();
+    expect(geo.cutOffWasteM).toBeNull();
+    expect(geo.formatted.tipLevel).toBe('-');
+    expect(geo.formatted.cutOffWaste).toBe('-');
   });
 });
