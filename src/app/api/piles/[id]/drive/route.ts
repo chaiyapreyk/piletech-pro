@@ -102,6 +102,57 @@ export async function POST(
           },
         });
 
+        // Optional As-built & QC sync: Upsert QCInspection if any QC fields are submitted
+        const hasQCInput =
+          body.plumbnessXPercent !== undefined ||
+          body.plumbnessYPercent !== undefined ||
+          body.deltaXCm !== undefined ||
+          body.deltaYCm !== undefined;
+
+        if (hasQCInput) {
+          const px = body.plumbnessXPercent !== null && body.plumbnessXPercent !== undefined
+            ? Math.abs(Number(body.plumbnessXPercent))
+            : null;
+          const py = body.plumbnessYPercent !== null && body.plumbnessYPercent !== undefined
+            ? Math.abs(Number(body.plumbnessYPercent))
+            : null;
+          const dx = body.deltaXCm !== null && body.deltaXCm !== undefined
+            ? Math.abs(Number(body.deltaXCm))
+            : null;
+          const dy = body.deltaYCm !== null && body.deltaYCm !== undefined
+            ? Math.abs(Number(body.deltaYCm))
+            : null;
+
+          const isPlumbnessPassed = px !== null && py !== null ? px <= 1.0 && py <= 1.0 : true;
+          const netDeviationCm = dx !== null && dy !== null ? Number(Math.sqrt(dx * dx + dy * dy).toFixed(1)) : null;
+          const deviationStatus = netDeviationCm === null ? 'NORMAL' : netDeviationCm > 10.0 ? 'CRITICAL' : netDeviationCm > 5.0 ? 'WARNING' : 'NORMAL';
+
+          await tx.qCInspection.upsert({
+            where: { pileId },
+            create: {
+              pileId,
+              plumbnessXPercent: px,
+              plumbnessYPercent: py,
+              isPlumbnessPassed,
+              deltaXCm: dx,
+              deltaYCm: dy,
+              netDeviationCm,
+              deviationStatus,
+              inspectorName: inspectorName || '',
+            },
+            update: {
+              plumbnessXPercent: px,
+              plumbnessYPercent: py,
+              isPlumbnessPassed,
+              deltaXCm: dx,
+              deltaYCm: dy,
+              netDeviationCm,
+              deviationStatus,
+              inspectorName: inspectorName || undefined,
+            },
+          });
+        }
+
         const newStatus = isSetPassed ? 'COMPLETED' : 'ISSUE';
         await tx.pile.update({
           where: { id: pileId },

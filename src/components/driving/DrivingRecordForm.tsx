@@ -21,6 +21,8 @@ import {
   WifiOff,
   Plus,
   Minus,
+  ShieldCheck,
+  Compass,
 } from 'lucide-react';
 import Link from 'next/link';
 import { useToast } from '@/components/ui/ToastProvider';
@@ -73,6 +75,15 @@ interface PileData {
     notes?: string | null;
     isSetPassed: boolean;
     updatedAt?: Date | string;
+  } | null;
+  qcInspection?: {
+    plumbnessXPercent: number | null;
+    plumbnessYPercent: number | null;
+    deltaXCm: number | null;
+    deltaYCm: number | null;
+    netDeviationCm: number | null;
+    deviationStatus: string;
+    isPlumbnessPassed: boolean;
   } | null;
 }
 
@@ -152,6 +163,21 @@ export default function DrivingRecordForm({ pile }: { pile: PileData }) {
     pile.drivingRecord?.inspectorName || 'สมชาย วิศวกรสนาม'
   );
   const [notes, setNotes] = useState<string>(pile.drivingRecord?.notes || '');
+
+  // As-built QC Tolerance: Plumbness & Position Deviation States
+  const [plumbnessX, setPlumbnessX] = useState<number | null>(
+    pile.qcInspection?.plumbnessXPercent ?? null
+  );
+  const [plumbnessY, setPlumbnessY] = useState<number | null>(
+    pile.qcInspection?.plumbnessYPercent ?? null
+  );
+  const [deltaX, setDeltaX] = useState<number | null>(
+    pile.qcInspection?.deltaXCm ?? null
+  );
+  const [deltaY, setDeltaY] = useState<number | null>(
+    pile.qcInspection?.deltaYCm ?? null
+  );
+
   const [isSaving, setIsSaving] = useState<boolean>(false);
   const [savedSuccess, setSavedSuccess] = useState<boolean>(false);
   const [isFieldModeOpen, setIsFieldModeOpen] = useState(false);
@@ -200,6 +226,10 @@ export default function DrivingRecordForm({ pile }: { pile: PileData }) {
     manualTipLevel,
     inspectorName,
     notes,
+    plumbnessXPercent: plumbnessX,
+    plumbnessYPercent: plumbnessY,
+    deltaXCm: deltaX,
+    deltaYCm: deltaY,
   });
 
   const applyDraftForm = (draft: DrivingDraftForm) => {
@@ -227,6 +257,10 @@ export default function DrivingRecordForm({ pile }: { pile: PileData }) {
     setManualTipLevel(draft.manualTipLevel);
     setInspectorName(draft.inspectorName);
     setNotes(draft.notes);
+    if (draft.plumbnessXPercent !== undefined) setPlumbnessX(draft.plumbnessXPercent);
+    if (draft.plumbnessYPercent !== undefined) setPlumbnessY(draft.plumbnessYPercent);
+    if (draft.deltaXCm !== undefined) setDeltaX(draft.deltaXCm);
+    if (draft.deltaYCm !== undefined) setDeltaY(draft.deltaYCm);
   };
 
   const handleSaveDraft = async () => {
@@ -494,6 +528,10 @@ export default function DrivingRecordForm({ pile }: { pile: PileData }) {
           tipLevelM: activeTipLevel,
           inspectorName,
           notes,
+          plumbnessXPercent: plumbnessX,
+          plumbnessYPercent: plumbnessY,
+          deltaXCm: deltaX,
+          deltaYCm: deltaY,
           expectedRecordUpdatedAt: options?.expectedRecordUpdatedAt ?? draftServerRecordUpdatedAt,
           forceOverwrite: options?.forceOverwrite ?? false,
         }),
@@ -1187,6 +1225,243 @@ export default function DrivingRecordForm({ pile }: { pile: PileData }) {
               </span>
             </div>
           )}
+        </div>
+
+        {/* QA/QC Tolerance & As-Built Check: Plumbness & Position Deviation */}
+        <div className="pt-4 border-t border-slate-100 space-y-4">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between pb-1 gap-2">
+            <div>
+              <h3 className="text-sm font-black text-slate-800 flex items-center gap-1.5">
+                <ShieldCheck className="w-4 h-4 text-emerald-600" />
+                <span>การตรวจสอบความเอียงดิ่ง & ระยะหนีศูนย์ (Plumbness & Eccentricity Check)</span>
+              </h3>
+              <p className="text-[11px] text-slate-500 mt-0.5">
+                บันทึกค่าความเอียงดิ่ง (Verticality) และระยะเบี่ยงเบนแนวราบจากหมุด เพื่อประเมินผล QA/QC หน้างานทันที
+              </p>
+            </div>
+            <Link
+              href={`/piles/${pile.id}/qc`}
+              target="_blank"
+              className="text-xs text-blue-600 hover:text-blue-800 font-bold inline-flex items-center gap-1 self-start sm:self-auto"
+            >
+              <span>[เปิดฟอร์มตรวจสอบ QC ตัวเต็ม]</span>
+            </Link>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            {/* Panel 1: Plumbness (ความเอียงดิ่ง) */}
+            <div className="bg-slate-50 border border-slate-200 rounded-xl p-3.5 space-y-3">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-1.5">
+                  <Compass className="w-3.5 h-3.5 text-slate-600" />
+                  <span className="text-xs font-black text-slate-800">1. ความเอียงดิ่ง (Plumbness)</span>
+                </div>
+                {plumbnessX !== null && plumbnessY !== null ? (
+                  <span
+                    className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${
+                      plumbnessX <= 1.0 && plumbnessY <= 1.0
+                        ? 'bg-emerald-100 text-emerald-800 border border-emerald-300'
+                        : 'bg-rose-100 text-rose-800 border border-rose-300'
+                    }`}
+                  >
+                    {plumbnessX <= 1.0 && plumbnessY <= 1.0 ? '🟢 ได้ดิ่ง (&le;1%)' : '🔴 ดิ่งตก (>1%)'}
+                  </span>
+                ) : (
+                  <span className="text-[10px] text-slate-400">เกณฑ์: &le; 1.0%</span>
+                )}
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                {/* Plumbness X */}
+                <div>
+                  <label className="block text-[11px] font-bold text-slate-600 mb-1">
+                    ความเอียง แกน X (%)
+                  </label>
+                  <div className="relative">
+                    <input
+                      type="number"
+                      step="0.1"
+                      min="0"
+                      placeholder="เช่น 0.5"
+                      value={plumbnessX ?? ''}
+                      onChange={(e) => setPlumbnessX(e.target.value === '' ? null : parseFloat(e.target.value))}
+                      className="w-full text-xs font-mono font-bold bg-white border border-slate-300 rounded-lg px-2.5 py-1.5 pr-8 focus:ring-2 focus:ring-amber-500"
+                    />
+                    <span className="absolute right-2.5 top-1.5 text-slate-400 text-xs font-mono">%</span>
+                  </div>
+                  <div className="flex items-center gap-1 mt-1.5">
+                    <button
+                      type="button"
+                      onClick={() => setPlumbnessX((prev) => Math.max(0, Number(((prev ?? 0) - 0.1).toFixed(1))))}
+                      className="flex-1 py-0.5 bg-white hover:bg-slate-100 text-slate-700 border border-slate-200 rounded text-[10px] font-bold shadow-2xs"
+                    >
+                      -0.1
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setPlumbnessX((prev) => Number(((prev ?? 0) + 0.1).toFixed(1)))}
+                      className="flex-1 py-0.5 bg-white hover:bg-slate-100 text-slate-700 border border-slate-200 rounded text-[10px] font-bold shadow-2xs"
+                    >
+                      +0.1
+                    </button>
+                  </div>
+                </div>
+
+                {/* Plumbness Y */}
+                <div>
+                  <label className="block text-[11px] font-bold text-slate-600 mb-1">
+                    ความเอียง แกน Y (%)
+                  </label>
+                  <div className="relative">
+                    <input
+                      type="number"
+                      step="0.1"
+                      min="0"
+                      placeholder="เช่น 0.6"
+                      value={plumbnessY ?? ''}
+                      onChange={(e) => setPlumbnessY(e.target.value === '' ? null : parseFloat(e.target.value))}
+                      className="w-full text-xs font-mono font-bold bg-white border border-slate-300 rounded-lg px-2.5 py-1.5 pr-8 focus:ring-2 focus:ring-amber-500"
+                    />
+                    <span className="absolute right-2.5 top-1.5 text-slate-400 text-xs font-mono">%</span>
+                  </div>
+                  <div className="flex items-center gap-1 mt-1.5">
+                    <button
+                      type="button"
+                      onClick={() => setPlumbnessY((prev) => Math.max(0, Number(((prev ?? 0) - 0.1).toFixed(1))))}
+                      className="flex-1 py-0.5 bg-white hover:bg-slate-100 text-slate-700 border border-slate-200 rounded text-[10px] font-bold shadow-2xs"
+                    >
+                      -0.1
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setPlumbnessY((prev) => Number(((prev ?? 0) + 0.1).toFixed(1)))}
+                      className="flex-1 py-0.5 bg-white hover:bg-slate-100 text-slate-700 border border-slate-200 rounded text-[10px] font-bold shadow-2xs"
+                    >
+                      +0.1
+                    </button>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {/* Panel 2: Position Deviation (ระยะหนีศูนย์) */}
+            <div className="bg-slate-50 border border-slate-200 rounded-xl p-3.5 space-y-3">
+              {(() => {
+                const dx = deltaX !== null ? Math.abs(deltaX) : null;
+                const dy = deltaY !== null ? Math.abs(deltaY) : null;
+                const net = dx !== null && dy !== null ? Number(Math.sqrt(dx * dx + dy * dy).toFixed(1)) : null;
+                const isNormal = net !== null && net <= 5.0;
+                const isWarning = net !== null && net > 5.0 && net <= 10.0;
+                const isCritical = net !== null && net > 10.0;
+
+                return (
+                  <>
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-1.5">
+                        <ShieldCheck className="w-3.5 h-3.5 text-slate-600" />
+                        <span className="text-xs font-black text-slate-800">2. ระยะหนีศูนย์ (&Delta;X, &Delta;Y)</span>
+                      </div>
+                      {net !== null ? (
+                        <span
+                          className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${
+                            isNormal
+                              ? 'bg-emerald-100 text-emerald-800 border border-emerald-300'
+                              : isWarning
+                              ? 'bg-amber-100 text-amber-800 border border-amber-300'
+                              : 'bg-rose-100 text-rose-800 border border-rose-300'
+                          }`}
+                        >
+                          {isNormal ? '🟢 ปกติ (&le;5cm)' : isWarning ? '🟡 เฝ้าระวัง' : '🔴 วิกฤต (>10cm)'}
+                        </span>
+                      ) : (
+                        <span className="text-[10px] text-slate-400">เกณฑ์ปกติ: &le; 5.0 cm</span>
+                      )}
+                    </div>
+
+                    <div className="grid grid-cols-2 gap-3">
+                      {/* Delta X */}
+                      <div>
+                        <label className="block text-[11px] font-bold text-slate-600 mb-1">
+                          เบี่ยงเบน &Delta;X (cm)
+                        </label>
+                        <div className="relative">
+                          <input
+                            type="number"
+                            step="0.1"
+                            min="0"
+                            placeholder="เช่น 2.5"
+                            value={deltaX ?? ''}
+                            onChange={(e) => setDeltaX(e.target.value === '' ? null : parseFloat(e.target.value))}
+                            className="w-full text-xs font-mono font-bold bg-white border border-slate-300 rounded-lg px-2.5 py-1.5 pr-8 focus:ring-2 focus:ring-amber-500"
+                          />
+                          <span className="absolute right-2.5 top-1.5 text-slate-400 text-xs font-mono">cm</span>
+                        </div>
+                        <div className="flex items-center gap-1 mt-1.5">
+                          <button
+                            type="button"
+                            onClick={() => setDeltaX((prev) => Math.max(0, Number(((prev ?? 0) - 0.5).toFixed(1))))}
+                            className="flex-1 py-0.5 bg-white hover:bg-slate-100 text-slate-700 border border-slate-200 rounded text-[10px] font-bold shadow-2xs"
+                          >
+                            -0.5
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => setDeltaX((prev) => Number(((prev ?? 0) + 0.5).toFixed(1)))}
+                            className="flex-1 py-0.5 bg-white hover:bg-slate-100 text-slate-700 border border-slate-200 rounded text-[10px] font-bold shadow-2xs"
+                          >
+                            +0.5
+                          </button>
+                        </div>
+                      </div>
+
+                      {/* Delta Y */}
+                      <div>
+                        <label className="block text-[11px] font-bold text-slate-600 mb-1">
+                          เบี่ยงเบน &Delta;Y (cm)
+                        </label>
+                        <div className="relative">
+                          <input
+                            type="number"
+                            step="0.1"
+                            min="0"
+                            placeholder="เช่น 3.5"
+                            value={deltaY ?? ''}
+                            onChange={(e) => setDeltaY(e.target.value === '' ? null : parseFloat(e.target.value))}
+                            className="w-full text-xs font-mono font-bold bg-white border border-slate-300 rounded-lg px-2.5 py-1.5 pr-8 focus:ring-2 focus:ring-amber-500"
+                          />
+                          <span className="absolute right-2.5 top-1.5 text-slate-400 text-xs font-mono">cm</span>
+                        </div>
+                        <div className="flex items-center gap-1 mt-1.5">
+                          <button
+                            type="button"
+                            onClick={() => setDeltaY((prev) => Math.max(0, Number(((prev ?? 0) - 0.5).toFixed(1))))}
+                            className="flex-1 py-0.5 bg-white hover:bg-slate-100 text-slate-700 border border-slate-200 rounded text-[10px] font-bold shadow-2xs"
+                          >
+                            -0.5
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => setDeltaY((prev) => Number(((prev ?? 0) + 0.5).toFixed(1)))}
+                            className="flex-1 py-0.5 bg-white hover:bg-slate-100 text-slate-700 border border-slate-200 rounded text-[10px] font-bold shadow-2xs"
+                          >
+                            +0.5
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Computed Net Deviation Badge */}
+                    <div className="bg-white rounded-lg p-2 border border-slate-200 flex items-center justify-between text-xs font-mono">
+                      <span className="text-slate-600 font-sans font-semibold">ระยะหนีศูนย์สุทธิ (&Delta;):</span>
+                      <strong className="text-slate-900 font-black text-sm">
+                        {net !== null ? `${net.toFixed(1)} cm` : '-'}
+                      </strong>
+                    </div>
+                  </>
+                );
+              })()}
+            </div>
+          </div>
         </div>
 
         {/* Inspector & Notes */}

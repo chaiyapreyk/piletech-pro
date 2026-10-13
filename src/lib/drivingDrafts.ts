@@ -21,6 +21,10 @@ export interface DrivingDraftForm {
   manualTipLevel: number;
   inspectorName: string;
   notes: string;
+  plumbnessXPercent?: number | null;
+  plumbnessYPercent?: number | null;
+  deltaXCm?: number | null;
+  deltaYCm?: number | null;
 }
 
 export interface DrivingDraftV1 {
