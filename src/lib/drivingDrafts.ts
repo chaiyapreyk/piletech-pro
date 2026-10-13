@@ -10,6 +10,7 @@ export interface DrivingDraftForm {
   recordScope: 'FULL' | 'WINDOW';
   windowLength: number;
   measuredLast10: number;
+  measuredLast10Rounds?: [number, number, number];
   measuredTempC: number;
   totalPileLength: number;
   isStickUpAuto: boolean;

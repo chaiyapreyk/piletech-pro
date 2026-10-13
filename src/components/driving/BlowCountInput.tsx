@@ -22,9 +22,12 @@ import {
   Table as TableIcon,
   LayoutGrid,
   Delete,
+  Sliders,
 } from 'lucide-react';
 import RollingWheel from '@/components/ui/RollingWheel';
 import ConfirmModal from '@/components/ui/ConfirmModal';
+import ExcelBlowTableView from './ExcelBlowTableView';
+import type { DrivingCriteriaInput } from '@/lib/calculations/drivingLoadProfile';
 import {
   appendDrivingInterval,
   updateDrivingInterval,
@@ -39,6 +42,7 @@ interface Props {
   onScopeChange?: (scope: 'FULL' | 'WINDOW') => void;
   windowLength?: number;
   onWindowLengthChange?: (len: number) => void;
+  criteria?: DrivingCriteriaInput | null;
 }
 
 export default function BlowCountInput({
@@ -50,6 +54,7 @@ export default function BlowCountInput({
   onScopeChange,
   windowLength: externalWindowLength,
   onWindowLengthChange,
+  criteria,
 }: Props) {
   // Local fallbacks: default unit is FEET, scope is WINDOW, windowLength is 20
   const [internalUnit, setInternalUnit] = useState<'METER' | 'FEET'>('FEET');
@@ -76,7 +81,7 @@ export default function BlowCountInput({
   const [currentInput, setCurrentInput] = useState<string>('20');
   const [wheelBlowValue, setWheelBlowValue] = useState<number>(25);
   const [numpadValue, setNumpadValue] = useState<string>('25');
-  const [inputMode, setInputMode] = useState<'WHEEL' | 'NUMPAD' | 'KEYBOARD'>('NUMPAD');
+  const [inputMode, setInputMode] = useState<'NUMPAD' | 'WHEEL' | 'KEYBOARD' | 'EQUALIZER'>('NUMPAD');
   const [viewFormat, setViewFormat] = useState<'TABLE' | 'CHIPS'>('TABLE');
 
   // Confirmation Modal state
@@ -349,44 +354,10 @@ export default function BlowCountInput({
             </div>
           </div>
 
-          {/* Input Mode Selector: Numpad (Default) vs Wheel vs Keyboard */}
-          <div className="flex items-center bg-slate-100 p-1 rounded-lg border border-slate-200 self-start sm:self-auto shadow-2xs">
-            <button
-              type="button"
-              onClick={() => setInputMode('NUMPAD')}
-              className={`flex items-center gap-1 px-2.5 py-1 rounded text-xs font-bold transition ${
-                inputMode === 'NUMPAD'
-                  ? 'bg-amber-500 text-slate-950 shadow-xs'
-                  : 'text-slate-600 hover:text-slate-900'
-              }`}
-            >
-              <LayoutGrid className="w-3.5 h-3.5" />
-              <span>แป้นตัวเลขไซต์งาน</span>
-            </button>
-            <button
-              type="button"
-              onClick={() => setInputMode('WHEEL')}
-              className={`flex items-center gap-1 px-2.5 py-1 rounded text-xs font-bold transition ${
-                inputMode === 'WHEEL'
-                  ? 'bg-amber-500 text-slate-950 shadow-xs'
-                  : 'text-slate-600 hover:text-slate-900'
-              }`}
-            >
-              <Disc3 className="w-3.5 h-3.5" />
-              <span>หมุนวงล้อ</span>
-            </button>
-            <button
-              type="button"
-              onClick={() => setInputMode('KEYBOARD')}
-              className={`flex items-center gap-1 px-2.5 py-1 rounded text-xs font-bold transition ${
-                inputMode === 'KEYBOARD'
-                  ? 'bg-amber-500 text-slate-950 shadow-xs'
-                  : 'text-slate-600 hover:text-slate-900'
-              }`}
-            >
-              <Keyboard className="w-3.5 h-3.5" />
-              <span>คีย์บอร์ด</span>
-            </button>
+          {/* Method Badge: Excel Spreadsheet Method */}
+          <div className="flex items-center bg-emerald-50 px-3 py-1.5 rounded-xl border border-emerald-200 text-xs font-black text-emerald-800 shadow-2xs">
+            <TableIcon className="w-4 h-4 mr-1.5 text-emerald-600" />
+            <span>Excel Spreadsheet Table</span>
           </div>
         </div>
 
@@ -524,276 +495,15 @@ export default function BlowCountInput({
         )}
       </div>
 
-      {/* 3. Fast Input Area based on Mode */}
-      {inputMode === 'NUMPAD' ? (
-        /* Fast Field Numpad - Specially designed for site engineers with gloves */
-        <div className="bg-slate-900 text-white p-4 sm:p-5 rounded-2xl shadow-md border border-slate-800 space-y-3">
-          {/* Header row & Live Display */}
-          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-slate-800">
-            <div>
-              <div className="flex items-center gap-2">
-                <span className="text-[11px] font-bold text-amber-400 uppercase tracking-wider">
-                  ลำดับบันทึกถัดไป
-                </span>
-                <span className="px-2 py-0.5 rounded bg-amber-500/20 text-amber-300 font-mono text-xs font-bold border border-amber-500/30">
-                  {unit === 'FEET' ? 'ฟุตที่' : 'เมตรที่'} {currentDrivenCount + 1}
-                  {scope === 'WINDOW' && ` / ${windowLength}`}
-                </span>
-              </div>
-              <p className="text-[11px] text-slate-400 mt-0.5">
-                ปุ่มใหญ่พิเศษ &ge; 48px สำหรับสวมถุงมือไซต์งานและแสงแดดจ้า
-              </p>
-            </div>
-
-            {/* Big Digital Display */}
-            <div className="flex items-baseline justify-end gap-2 bg-slate-950/80 px-4 py-2 rounded-xl border border-slate-700/80 min-w-[160px]">
-              <span className="text-3xl sm:text-4xl font-black font-mono text-amber-400 tracking-tight">
-                {numpadValue || '0'}
-              </span>
-              <div className="text-right">
-                <span className="text-xs font-bold text-slate-300 block">{blowUnitLabel}</span>
-                <span className="text-[10px] font-mono text-slate-500">
-                  {getConvertedText(parseInt(numpadValue) || 0)}
-                </span>
-              </div>
-            </div>
-          </div>
-
-          {/* Quick adjustment presets */}
-          <div className="flex items-center gap-1.5 overflow-x-auto py-1">
-            <span className="text-[11px] text-slate-400 font-medium whitespace-nowrap">ปรับด่วน:</span>
-            {[-5, -1, 1, 5, 10].map((delta) => (
-              <button
-                key={delta}
-                type="button"
-                onClick={() => handleNumpadNudge(delta)}
-                className="px-2.5 py-1.5 rounded-lg text-xs font-bold font-mono bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-200 transition active:scale-95 flex-shrink-0 cursor-pointer"
-              >
-                {delta > 0 ? `+${delta}` : delta}
-              </button>
-            ))}
-            {[15, 20, 25, 30, 40].map((preset) => (
-              <button
-                key={preset}
-                type="button"
-                onClick={() => setNumpadValue(preset.toString())}
-                className={`px-2.5 py-1.5 rounded-lg text-xs font-bold font-mono transition active:scale-95 flex-shrink-0 cursor-pointer ${
-                  numpadValue === preset.toString()
-                    ? 'bg-amber-500 text-slate-950 font-black'
-                    : 'bg-slate-800/80 hover:bg-slate-700 border border-slate-700 text-slate-300'
-                }`}
-              >
-                {preset}
-              </button>
-            ))}
-          </div>
-
-          {/* 3x4 Numpad Keypad */}
-          <div className="grid grid-cols-3 gap-2 sm:gap-2.5 max-w-md mx-auto">
-            {['1', '2', '3', '4', '5', '6', '7', '8', '9'].map((digit) => (
-              <button
-                key={digit}
-                type="button"
-                onClick={() => handleNumpadDigit(digit)}
-                className="h-12 sm:h-13 bg-slate-800 hover:bg-slate-700 active:bg-amber-500 active:text-slate-950 text-white font-mono text-xl font-black rounded-xl border border-slate-700 shadow-xs transition active:scale-95 flex items-center justify-center select-none cursor-pointer"
-              >
-                {digit}
-              </button>
-            ))}
-            <button
-              type="button"
-              onClick={handleNumpadClear}
-              className="h-12 sm:h-13 bg-slate-800/60 hover:bg-rose-950/50 hover:text-rose-300 text-slate-400 font-bold text-sm rounded-xl border border-slate-700/80 transition active:scale-95 flex items-center justify-center select-none cursor-pointer"
-            >
-              C (ล้าง)
-            </button>
-            <button
-              type="button"
-              onClick={() => handleNumpadDigit('0')}
-              className="h-12 sm:h-13 bg-slate-800 hover:bg-slate-700 active:bg-amber-500 active:text-slate-950 text-white font-mono text-xl font-black rounded-xl border border-slate-700 shadow-xs transition active:scale-95 flex items-center justify-center select-none cursor-pointer"
-            >
-              0
-            </button>
-            <button
-              type="button"
-              onClick={handleNumpadBackspace}
-              className="h-12 sm:h-13 bg-slate-800/60 hover:bg-slate-700 text-slate-300 font-bold text-sm rounded-xl border border-slate-700 transition active:scale-95 flex items-center justify-center select-none cursor-pointer"
-              title="ลบตัวเลขตัวหลัง"
-            >
-              <Delete className="w-5 h-5" />
-            </button>
-          </div>
-
-          {/* Primary Submit & Skip Actions */}
-          <div className="grid grid-cols-1 sm:grid-cols-12 gap-2 pt-1 max-w-md mx-auto">
-            <button
-              type="button"
-              onClick={handleNumpadSubmit}
-              disabled={!numpadValue || parseInt(numpadValue) <= 0}
-              className="sm:col-span-8 h-13 bg-amber-500 hover:bg-amber-400 disabled:opacity-50 text-slate-950 font-black px-4 rounded-xl text-sm flex items-center justify-center gap-2 shadow-lg transition active:scale-98 cursor-pointer"
-            >
-              <Plus className="w-5 h-5" />
-              <span>
-                บันทึก {numpadValue || '0'} Blows ({unit === 'FEET' ? 'ฟุตที่' : 'เมตรที่'} {currentDrivenCount + 1})
-              </span>
-            </button>
-
-            <button
-              type="button"
-              onClick={handleSkipInterval}
-              className="sm:col-span-4 h-13 bg-slate-800 hover:bg-slate-700 text-slate-300 font-bold px-3 rounded-xl text-xs flex items-center justify-center gap-1.5 border border-slate-700 transition active:scale-98 cursor-pointer"
-            >
-              <FastForward className="w-4 h-4 text-amber-400" />
-              <span>ข้ามช่วงนี้ (Skip)</span>
-            </button>
-          </div>
-        </div>
-      ) : inputMode === 'WHEEL' ? (
-        /* Rolling Wheel Selector Area */
-        <div className="bg-slate-50 border border-slate-300/80 p-4 rounded-2xl shadow-2xs">
-          <div className="flex flex-col sm:flex-row items-center gap-4">
-            {/* The Rolling Drum */}
-            <div className="w-36">
-              <RollingWheel
-                items={wheelItems}
-                value={wheelBlowValue}
-                onChange={(val) => setWheelBlowValue(Number(val))}
-                label={`เลือก ${blowUnitLabel}`}
-              />
-            </div>
-
-            {/* Action Bar */}
-            <div className="flex-1 space-y-3 w-full">
-              <div className="flex items-center justify-between">
-                <div>
-                  <span className="text-xs text-slate-600 block">
-                    ลำดับถัดไป:{' '}
-                    <strong className="text-amber-700 font-bold">
-                      {unit === 'FEET' ? 'ฟุตที่' : 'เมตรที่'} {currentDrivenCount + 1}
-                      {scope === 'WINDOW' && ` (จาก ${windowLength})`}
-                    </strong>
-                  </span>
-                  <span className="text-[11px] text-slate-400">
-                    หากตอกเร็วบันทึกไม่ทัน กดปุ่ม &quot;ข้าม&quot; เพื่อข้ามได้ทันที
-                  </span>
-                </div>
-                <div className="text-right">
-                  <div className="text-xl font-black font-mono text-amber-600 bg-amber-100 px-3 py-1 rounded-lg inline-block border border-amber-200">
-                    {wheelBlowValue} <span className="text-xs font-normal">{blowUnitLabel}</span>
-                  </div>
-                  <div className="text-[11px] font-mono font-bold text-slate-500 mt-0.5">
-                    {getConvertedText(wheelBlowValue)}
-                  </div>
-                </div>
-              </div>
-
-              {/* Primary Dual Action Buttons: [Record] and [Skip] */}
-              <div className="grid grid-cols-1 sm:grid-cols-12 gap-2">
-                {/* Big Record Button */}
-                <button
-                  type="button"
-                  onClick={() => handleAddInterval(wheelBlowValue)}
-                  className="sm:col-span-8 bg-amber-500 hover:bg-amber-600 text-slate-950 font-black py-3 px-4 rounded-xl text-xs flex items-center justify-center gap-2 shadow-sm transition active:scale-98"
-                >
-                  <Plus className="w-4 h-4" />
-                  <span>
-                    บันทึก {wheelBlowValue} Blows ({unit === 'FEET' ? 'ฟุตที่' : 'เมตรที่'} {currentDrivenCount + 1})
-                  </span>
-                </button>
-
-                {/* Instant Skip Button for Fast Hammering */}
-                <button
-                  type="button"
-                  onClick={handleSkipInterval}
-                  title="ข้ามช่วงนี้เมื่อตอกเร็วหรือบันทึกไม่ทัน (สามารถคลิกกลับมากรอกย้อนหลังได้)"
-                  className="sm:col-span-4 bg-slate-200 hover:bg-amber-100 border border-slate-300 text-slate-800 hover:text-amber-900 font-bold py-3 px-3 rounded-xl text-xs flex items-center justify-center gap-1.5 shadow-2xs transition active:scale-98"
-                >
-                  <FastForward className="w-4 h-4 text-amber-600" />
-                  <span>ข้าม{unitShort}ที่ {currentDrivenCount + 1} (ไม่ทัน)</span>
-                </button>
-              </div>
-
-              {/* Quick Jump presets */}
-              <div className="flex items-center gap-1 justify-between pt-1 text-xs">
-                <span className="text-[11px] text-slate-400 font-medium">ขยับไว:</span>
-                {[15, 20, 25, 30, 40, 50].map((preset) => (
-                  <button
-                    key={preset}
-                    type="button"
-                    onClick={() => setWheelBlowValue(preset)}
-                    className={`px-2 py-0.5 rounded text-[11px] font-mono font-bold transition ${
-                      wheelBlowValue === preset
-                        ? 'bg-amber-500 text-slate-950'
-                        : 'bg-white border border-slate-200 text-slate-700 hover:bg-slate-100'
-                    }`}
-                  >
-                    {preset}
-                  </button>
-                ))}
-              </div>
-            </div>
-          </div>
-        </div>
-      ) : (
-        /* Keyboard Input Mode */
-        <div className="bg-slate-50 border border-slate-200 p-3.5 rounded-2xl space-y-2">
-          <div className="flex flex-wrap items-center gap-2">
-            <span className="text-xs font-bold text-slate-700">
-              เพิ่ม{unit === 'FEET' ? 'ฟุตที่' : 'เมตรที่'} {currentDrivenCount + 1}:
-            </span>
-            <input
-              type="number"
-              placeholder="จำนวน Blows"
-              value={currentInput}
-              onChange={(e) => setCurrentInput(e.target.value)}
-              onKeyDown={(e) => e.key === 'Enter' && handleAddInterval(parseInt(currentInput))}
-              className="w-24 text-xs font-bold bg-white border border-slate-300 rounded-lg px-2.5 py-1.5 focus:ring-2 focus:ring-amber-500 focus:outline-none font-mono"
-            />
-            <button
-              type="button"
-              onClick={() => handleAddInterval(parseInt(currentInput))}
-              className="bg-amber-500 hover:bg-amber-600 text-slate-950 px-3.5 py-1.5 rounded-lg text-xs font-black flex items-center gap-1 shadow-sm"
-            >
-              <Plus className="w-3.5 h-3.5" />
-              <span>บันทึก</span>
-            </button>
-
-            {/* Skip button on keyboard mode */}
-            <button
-              type="button"
-              onClick={handleSkipInterval}
-              className="bg-slate-200 hover:bg-amber-100 border border-slate-300 text-slate-800 px-3 py-1.5 rounded-lg text-xs font-bold flex items-center gap-1 transition"
-            >
-              <FastForward className="w-3.5 h-3.5 text-amber-600" />
-              <span>ข้ามช่วงนี้ (ไม่ทัน)</span>
-            </button>
-
-            <div className="flex items-center gap-1 ml-auto">
-              <button
-                type="button"
-                onClick={() => handleQuickAdd(0)}
-                className="bg-slate-200 hover:bg-slate-300 text-slate-700 px-2 py-1 rounded text-xs font-medium"
-              >
-                เท่าเดิม
-              </button>
-              <button
-                type="button"
-                onClick={() => handleQuickAdd(5)}
-                className="bg-slate-200 hover:bg-slate-300 text-slate-700 px-2 py-1 rounded text-xs font-medium"
-              >
-                +5
-              </button>
-              <button
-                type="button"
-                onClick={() => handleQuickAdd(10)}
-                className="bg-slate-200 hover:bg-slate-300 text-slate-700 px-2 py-1 rounded text-xs font-medium"
-              >
-                +10
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
+      {/* 3. Excel Spreadsheet Data Table (Direct Cell Editing) */}
+      <ExcelBlowTableView
+        blowCounts={blowCounts}
+        onChange={onChange}
+        unit={unit}
+        scope={scope}
+        windowLength={windowLength}
+        criteria={criteria}
+      />
 
       {/* 4. Display Toggle & Management Toolbar */}
       <div className="flex flex-wrap items-center justify-between gap-2 text-xs pt-1">

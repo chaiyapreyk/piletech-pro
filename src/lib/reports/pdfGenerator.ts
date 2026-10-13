@@ -465,7 +465,7 @@ export function generateIndividualPilePDFDocument({
   doc.setTextColor(71, 85, 105);
   doc.text(hasElevation ? 'Elev (m)' : `Depth (${recordUnit === 'FEET' ? 'ft' : 'm'})`, chart1X + 2, curY + plotInnerMarginTop + 2);
 
-  // --- Draw Chart 2: Estimated Ultimate Load Profile ($R_u$) ---
+  // --- Draw Chart 2: Estimated Ultimate Load Profile ($R_u$) & Actual $R_a$ ---
   doc.setFillColor(248, 250, 252);
   doc.setDrawColor(203, 213, 225);
   doc.rect(chart2X, curY, singleChartWidth, chartHeight, 'FD');
@@ -473,7 +473,7 @@ export function generateIndividualPilePDFDocument({
   doc.setFontSize(7.5);
   doc.setFont('helvetica', 'bold');
   doc.setTextColor(30, 41, 59);
-  doc.text('2. Estimated Ultimate Load Profile (Ru, tons)', chart2X + 3, curY + 5);
+  doc.text('2. Estimated Load Profile (Ru & Actual Ra, tons)', chart2X + 3, curY + 5);
 
   const loadScaleMax = Math.ceil(Math.max(maxLoadT, 60) / 20) * 20;
   const getLoadXPDF = (loadT: number) => {

@@ -2,7 +2,6 @@
 
 import React, { useState } from 'react';
 import { useRouter } from 'next/navigation';
-import BlowCountInput from './BlowCountInput';
 import DepthSoilChart from './DepthSoilChart';
 import DecimalRollingPicker from '@/components/ui/DecimalRollingPicker';
 import {
@@ -20,6 +19,8 @@ import {
   AlertTriangle,
   Wifi,
   WifiOff,
+  Plus,
+  Minus,
 } from 'lucide-react';
 import Link from 'next/link';
 import { useToast } from '@/components/ui/ToastProvider';
@@ -37,6 +38,7 @@ import {
   calculateDerivedGeometry,
   applyManualTipOverride,
 } from '@/lib/calculations/pileGeometry';
+import { ensureMinimumIntervals } from '@/lib/calculations/drivingEqualizer';
 
 interface PileData {
   id: string;
@@ -78,8 +80,8 @@ export default function DrivingRecordForm({ pile }: { pile: PileData }) {
   const router = useRouter();
   const toast = useToast();
   const initialBlows: (number | null)[] = pile.drivingRecord?.penetrationBlows
-    ? JSON.parse(pile.drivingRecord.penetrationBlows)
-    : [];
+    ? ensureMinimumIntervals(JSON.parse(pile.drivingRecord.penetrationBlows), 20)
+    : ensureMinimumIntervals([], 20);
 
   const [blowCounts, setBlowCounts] = useState<(number | null)[]>(initialBlows);
   // Normalize DB unit: default to FEET unless explicitly saved as METER
@@ -98,30 +100,32 @@ export default function DrivingRecordForm({ pile }: { pile: PileData }) {
     pile.drivingRecord?.windowLengthFt || 20
   );
 
-  const [measuredLast10, setMeasuredLast10] = useState<number>(
-    pile.drivingRecord?.measuredLast10Cm ?? 5.0
-  );
+  const initialMeasuredLast10 = pile.drivingRecord?.measuredLast10Cm ?? 5.0;
+  const [measuredLast10, setMeasuredLast10] = useState<number>(initialMeasuredLast10);
+  const [last10Rounds, setLast10Rounds] = useState<[number | null, number | null, number | null]>([
+    initialMeasuredLast10,
+    initialMeasuredLast10,
+    initialMeasuredLast10,
+  ]);
   const [measuredTempC, setMeasuredTempC] = useState<number>(
     pile.drivingRecord?.measuredTempCCm ?? 1.2
   );
-  const [last10InputMode, setLast10InputMode] = useState<'WHEEL' | 'KEYBOARD'>('WHEEL');
 
   // Engineering Elevations & Pile Dimensions
   const [totalPileLength, setTotalPileLength] = useState<number>(
     pile.drivingRecord?.totalPileLengthM ?? 21.0
   );
-  // Auto-calculated Stick-up from recorded table
-  const drivenStepsCount = blowCounts.length;
+  // Auto-calculated Stick-up from recorded table: only counts recorded/penetrated steps (blows > 0)
+  const validDrivenStepsCount = blowCounts.filter((b): b is number => typeof b === 'number' && b > 0).length;
   const isWindowScope = recordScope === 'WINDOW';
   
-  // In WINDOW mode (e.g. 20 ft): remaining unpenetrated feet = windowLength - drivenStepsCount
-  // (e.g. 20 - 14 = 6 ft -> 6 * 0.3048 = 1.83 m)
-  const remainingFeetInWindow = Math.max(0, windowLength - drivenStepsCount);
+  // In WINDOW mode (e.g. 20 ft): remaining unpenetrated feet = windowLength - validDrivenStepsCount
+  const remainingFeetInWindow = Math.max(0, windowLength - validDrivenStepsCount);
   const calculatedStickUpFromTable = isWindowScope
     ? (recordUnit === 'FEET'
         ? Number((remainingFeetInWindow * 0.3048).toFixed(2))
-        : Number(Math.max(0, (windowLength * 0.3048) - drivenStepsCount).toFixed(2)))
-    : Number(Math.max(0, (Number(totalPileLength) || 21) - (recordUnit === 'FEET' ? drivenStepsCount * 0.3048 : drivenStepsCount)).toFixed(2));
+        : Number(Math.max(0, (windowLength * 0.3048) - validDrivenStepsCount).toFixed(2)))
+    : Number(Math.max(0, (Number(totalPileLength) || 21) - (recordUnit === 'FEET' ? validDrivenStepsCount * 0.3048 : validDrivenStepsCount)).toFixed(2));
 
   // Determine if stick-up was manually overridden by user or should auto-sync from table
   const [isStickUpAuto, setIsStickUpAuto] = useState<boolean>(
@@ -181,6 +185,11 @@ export default function DrivingRecordForm({ pile }: { pile: PileData }) {
     recordScope,
     windowLength,
     measuredLast10,
+    measuredLast10Rounds: [
+      last10Rounds[0] ?? measuredLast10,
+      last10Rounds[1] ?? measuredLast10,
+      last10Rounds[2] ?? measuredLast10,
+    ],
     measuredTempC,
     totalPileLength,
     isStickUpAuto,
@@ -199,6 +208,15 @@ export default function DrivingRecordForm({ pile }: { pile: PileData }) {
     setRecordScope(draft.recordScope);
     setWindowLength(draft.windowLength);
     setMeasuredLast10(draft.measuredLast10);
+    if (draft.measuredLast10Rounds && Array.isArray(draft.measuredLast10Rounds)) {
+      setLast10Rounds([
+        draft.measuredLast10Rounds[0] ?? draft.measuredLast10,
+        draft.measuredLast10Rounds[1] ?? draft.measuredLast10,
+        draft.measuredLast10Rounds[2] ?? draft.measuredLast10,
+      ]);
+    } else {
+      setLast10Rounds([draft.measuredLast10, draft.measuredLast10, draft.measuredLast10]);
+    }
     setMeasuredTempC(draft.measuredTempC);
     setTotalPileLength(draft.totalPileLength);
     setIsStickUpAuto(draft.isStickUpAuto);
@@ -430,8 +448,16 @@ export default function DrivingRecordForm({ pile }: { pile: PileData }) {
   const activeDrivenDepth = activeGeometry.drivenDepthM;
 
   const targetSet = pile.criteria?.targetSet10BlowsCm ?? 7.0;
-  const isPassed = measuredLast10 > 0 && measuredLast10 <= targetSet;
-  const isEvaluated = measuredLast10 > 0;
+
+  // Evaluation Rule: All recorded rounds must pass <= targetSet and be > 0
+  const validRounds = last10Rounds.filter((r): r is number => typeof r === 'number' && r > 0);
+  const isEvaluated = validRounds.length > 0;
+  // All 3 rounds must be entered and each must be <= targetSet
+  const isAllThreeFilled = last10Rounds.every((r) => typeof r === 'number' && r > 0);
+  const isPassed = isAllThreeFilled && last10Rounds.every((r) => typeof r === 'number' && r > 0 && r <= targetSet);
+  const avgMeasuredLast10 = validRounds.length > 0
+    ? Number((validRounds.reduce((acc, curr) => acc + curr, 0) / validRounds.length).toFixed(2))
+    : measuredLast10;
 
   const handleSubmit = async (
     e?: React.FormEvent,
@@ -458,7 +484,7 @@ export default function DrivingRecordForm({ pile }: { pile: PileData }) {
           recordUnit,
           recordScope,
           windowLengthFt: recordScope === 'WINDOW' ? windowLength : null,
-          measuredLast10Cm: measuredLast10,
+          measuredLast10Cm: avgMeasuredLast10,
           measuredTempCCm: measuredTempC,
           drivenLengthM: activeDrivenDepth,
           totalPileLengthM: totalLengthNum,
@@ -601,168 +627,324 @@ export default function DrivingRecordForm({ pile }: { pile: PileData }) {
         </div>
       </div>
 
-      {/* Grid: Blow Counts & Chart */}
-      <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
-        {/* Left: Blow count meter logger with Rolling Wheel */}
-        <div className="lg:col-span-7 bg-white rounded-xl shadow-sm border border-slate-200 p-5 space-y-4">
-          <BlowCountInput
-            blowCounts={blowCounts}
-            onChange={setBlowCounts}
-            recordUnit={recordUnit}
-            onUnitChange={setRecordUnit}
-            recordScope={recordScope}
-            onScopeChange={setRecordScope}
-            windowLength={windowLength}
-            onWindowLengthChange={setWindowLength}
-          />
+      {/* Scope, Unit Toolbar & Driving Log Bar Adjuster */}
+      <div className="space-y-4">
+        {/* Scope and Unit Quick Switcher Bar */}
+        <div className="bg-white rounded-xl shadow-xs border border-slate-200 p-3 sm:p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+          <div className="flex items-center gap-2 flex-wrap">
+            <span className="text-xs font-bold text-slate-700">หน่วยบันทึก:</span>
+            <div className="inline-flex rounded-lg border border-slate-200 bg-slate-50 p-0.5">
+              <button
+                type="button"
+                onClick={() => setRecordUnit('FEET')}
+                className={`px-3 py-1 text-xs font-bold rounded-md transition ${
+                  recordUnit === 'FEET'
+                    ? 'bg-amber-500 text-slate-950 shadow-2xs'
+                    : 'text-slate-600 hover:text-slate-900'
+                }`}
+              >
+                ฟุต (ft)
+              </button>
+              <button
+                type="button"
+                onClick={() => setRecordUnit('METER')}
+                className={`px-3 py-1 text-xs font-bold rounded-md transition ${
+                  recordUnit === 'METER'
+                    ? 'bg-amber-500 text-slate-950 shadow-2xs'
+                    : 'text-slate-600 hover:text-slate-900'
+                }`}
+              >
+                เมตร (m)
+              </button>
+            </div>
+
+            <span className="text-slate-300 mx-1 hidden sm:inline">|</span>
+
+            <span className="text-xs font-bold text-slate-700">ขอบเขต:</span>
+            <div className="inline-flex rounded-lg border border-slate-200 bg-slate-50 p-0.5">
+              <button
+                type="button"
+                onClick={() => setRecordScope('WINDOW')}
+                className={`px-3 py-1 text-xs font-bold rounded-md transition ${
+                  recordScope === 'WINDOW'
+                    ? 'bg-amber-500 text-slate-950 shadow-2xs'
+                    : 'text-slate-600 hover:text-slate-900'
+                }`}
+              >
+                {windowLength} {recordUnit === 'FEET' ? 'ft' : 'ม.'} สุดท้าย
+              </button>
+              <button
+                type="button"
+                onClick={() => setRecordScope('FULL')}
+                className={`px-3 py-1 text-xs font-bold rounded-md transition ${
+                  recordScope === 'FULL'
+                    ? 'bg-amber-500 text-slate-950 shadow-2xs'
+                    : 'text-slate-600 hover:text-slate-900'
+                }`}
+              >
+                ตลอดความยาวเสา (Full)
+              </button>
+            </div>
+          </div>
+
+          <div className="text-xs text-slate-500 flex items-center gap-1.5">
+            <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>
+            <span>ปรับค่า Blow Count ทันทีผ่านกราฟแท่งด้านล่าง</span>
+          </div>
         </div>
 
-        {/* Right: Real-time Depth Chart */}
-        <div className="lg:col-span-5 space-y-4">
-          <DepthSoilChart
-            blowCounts={blowCounts}
-            recordUnit={recordUnit}
-            recordScope={recordScope}
-            windowLength={windowLength}
-          />
-        </div>
+        {/* Primary Penetration Log: Interactive Bar Adjuster & Soil Chart */}
+        <DepthSoilChart
+          blowCounts={blowCounts}
+          onChange={setBlowCounts}
+          recordUnit={recordUnit}
+          recordScope={recordScope}
+          windowLength={windowLength}
+          criteria={pile.criteria}
+        />
       </div>
 
-      {/* Final Verification Section with Rolling Picker */}
+      {/* Final Verification Section: 3-Round Series Last 10 Blows */}
       <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-6 space-y-5">
-        <div className="flex items-center justify-between pb-2 border-b border-slate-100">
-          <h2 className="text-sm font-bold text-slate-800">
-            การวัดผล 10 ครั้งสุดท้าย (Last 10 Blows Verification)
-          </h2>
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between pb-3 border-b border-slate-100 gap-2">
+          <div>
+            <h2 className="text-sm font-black text-slate-800 flex items-center gap-2">
+              <span>การวัดผล Last 10 Blows ต่อเนื่อง 3 ชุด (3-Round Series Verification)</span>
+              <span className="text-[10px] bg-slate-100 text-slate-600 px-2 py-0.5 rounded font-mono font-bold">
+                10 blows/ชุด
+              </span>
+            </h2>
+            <p className="text-xs text-slate-500 mt-0.5">
+              บันทึกระยะทรุดตัว (cm) ทั้ง 3 ชุดต่อเนื่อง โดยทุกชุดต้องผ่านเกณฑ์ Target Set &le; {targetSet.toFixed(2)} cm
+            </p>
+          </div>
 
-          {/* Input Mode Toggle */}
-          <div className="flex items-center bg-slate-100 p-1 rounded-lg border border-slate-200">
-            <button
-              type="button"
-              onClick={() => setLast10InputMode('WHEEL')}
-              className={`flex items-center gap-1 px-2.5 py-1 rounded text-xs font-bold transition ${
-                last10InputMode === 'WHEEL'
-                  ? 'bg-amber-500 text-slate-950 shadow-xs'
-                  : 'text-slate-600 hover:text-slate-900'
-              }`}
-            >
-              <Disc3 className="w-3.5 h-3.5" />
-              <span>หมุนวงล้อ (Wheel)</span>
-            </button>
-            <button
-              type="button"
-              onClick={() => setLast10InputMode('KEYBOARD')}
-              className={`flex items-center gap-1 px-2.5 py-1 rounded text-xs font-bold transition ${
-                last10InputMode === 'KEYBOARD'
-                  ? 'bg-amber-500 text-slate-950 shadow-xs'
-                  : 'text-slate-600 hover:text-slate-900'
-              }`}
-            >
-              <Keyboard className="w-3.5 h-3.5" />
-              <span>พิมพ์ตัวเลข</span>
-            </button>
+          <div className="flex items-center gap-2 self-start sm:self-auto">
+            <span className="text-xs text-slate-500 font-semibold">เกณฑ์ Hiley Target:</span>
+            <span className="text-xs font-black px-2.5 py-1 bg-amber-100 text-amber-900 rounded-md font-mono">
+              &le; {targetSet.toFixed(2)} cm
+            </span>
           </div>
         </div>
 
-        {/* Last 10 Blows & C Inputs */}
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-          {/* Last 10 Blows Picker */}
-          <div>
-            <label className="block text-xs font-bold text-slate-700 mb-2">
-              ระยะ Set 10 ครั้งสุดท้าย (Last 10 Blows Measurement)
-            </label>
+        {/* 3-Round Inputs & Temporary Compression */}
+        <div className="grid grid-cols-1 lg:grid-cols-4 gap-4">
+          {/* Round 1 */}
+          {[0, 1, 2].map((roundIdx) => {
+            const roundNumber = roundIdx + 1;
+            const roundVal = last10Rounds[roundIdx];
+            const isRoundPassed = roundVal !== null && roundVal > 0 && roundVal <= targetSet;
+            const isRoundFailed = roundVal !== null && roundVal > targetSet;
 
-            {last10InputMode === 'WHEEL' ? (
-              <DecimalRollingPicker
-                value={measuredLast10}
-                onChange={setMeasuredLast10}
-                min={0}
-                max={20}
-                unit="cm"
-                label="หมุนเลือกค่า Last 10 Blows"
-              />
-            ) : (
-              <div className="relative">
-                <input
-                  type="number"
-                  step="0.1"
-                  required
-                  value={measuredLast10}
-                  onChange={(e) => setMeasuredLast10(parseFloat(e.target.value) || 0)}
-                  className="w-full text-lg font-bold font-mono text-slate-800 bg-slate-50 border border-slate-300 rounded-lg px-3 py-2.5 focus:bg-white focus:ring-2 focus:ring-amber-500"
-                />
-                <span className="absolute right-3 top-3 text-xs font-semibold text-slate-400">cm / 10 blows</span>
+            const updateRound = (delta: number) => {
+              const current = roundVal ?? targetSet;
+              const next = Math.max(0.1, Number((current + delta).toFixed(1)));
+              const updated = [...last10Rounds] as [number | null, number | null, number | null];
+              updated[roundIdx] = next;
+              setLast10Rounds(updated);
+              setMeasuredLast10(next);
+            };
+
+            return (
+              <div
+                key={roundIdx}
+                className={`p-3.5 rounded-xl border transition ${
+                  isRoundPassed
+                    ? 'bg-emerald-50/50 border-emerald-300'
+                    : isRoundFailed
+                    ? 'bg-rose-50/50 border-rose-300'
+                    : 'bg-slate-50 border-slate-200'
+                }`}
+              >
+                <div className="flex items-center justify-between mb-1.5">
+                  <span className="text-xs font-black text-slate-700">
+                    ชุดที่ {roundNumber} (Round {roundNumber})
+                  </span>
+                  {roundVal !== null && roundVal > 0 ? (
+                    <span
+                      className={`text-[10px] font-bold px-1.5 py-0.5 rounded ${
+                        isRoundPassed
+                          ? 'bg-emerald-200 text-emerald-900'
+                          : 'bg-rose-200 text-rose-900'
+                      }`}
+                    >
+                      {isRoundPassed ? 'ผ่าน' : 'เกินเกณฑ์'}
+                    </span>
+                  ) : (
+                    <span className="text-[10px] text-slate-400">ยังไม่ระบุ</span>
+                  )}
+                </div>
+
+                <div className="relative mb-2">
+                  <input
+                    type="number"
+                    step="0.1"
+                    min="0"
+                    placeholder="0.0"
+                    value={roundVal ?? ''}
+                    onChange={(e) => {
+                      const val = e.target.value === '' ? null : parseFloat(e.target.value);
+                      const updated = [...last10Rounds] as [number | null, number | null, number | null];
+                      updated[roundIdx] = val;
+                      setLast10Rounds(updated);
+                      if (val !== null) setMeasuredLast10(val);
+                    }}
+                    className="w-full text-lg font-black font-mono text-slate-800 bg-white border border-slate-300 rounded-lg px-2.5 py-1.5 focus:ring-2 focus:ring-amber-500 pr-12"
+                  />
+                  <span className="absolute right-2.5 top-2 text-[11px] font-semibold text-slate-400">
+                    cm
+                  </span>
+                </div>
+
+                {/* Quick Stepper Nudge */}
+                <div className="flex items-center gap-1">
+                  <button
+                    type="button"
+                    onClick={() => updateRound(-0.5)}
+                    className="flex-1 py-1 px-1.5 bg-white hover:bg-slate-100 text-slate-700 border border-slate-200 rounded text-[11px] font-bold transition shadow-2xs"
+                    title="ลด 0.5 cm"
+                  >
+                    -0.5
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => updateRound(-0.1)}
+                    className="flex-1 py-1 px-1.5 bg-white hover:bg-slate-100 text-slate-700 border border-slate-200 rounded text-[11px] font-bold transition shadow-2xs"
+                    title="ลด 0.1 cm"
+                  >
+                    -0.1
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => updateRound(0.1)}
+                    className="flex-1 py-1 px-1.5 bg-white hover:bg-slate-100 text-slate-700 border border-slate-200 rounded text-[11px] font-bold transition shadow-2xs"
+                    title="เพิ่ม 0.1 cm"
+                  >
+                    +0.1
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => updateRound(0.5)}
+                    className="flex-1 py-1 px-1.5 bg-white hover:bg-slate-100 text-slate-700 border border-slate-200 rounded text-[11px] font-bold transition shadow-2xs"
+                    title="เพิ่ม 0.5 cm"
+                  >
+                    +0.5
+                  </button>
+                </div>
               </div>
-            )}
-          </div>
+            );
+          })}
 
-          {/* Temporary Compression C Picker */}
-          <div>
-            <label className="block text-xs font-bold text-slate-700 mb-2">
-              ค่าการยุบตัวชั่วคราว C จริงหน้างาน (Temporary Compression)
-            </label>
+          {/* Temporary Compression (C) Input Card */}
+          <div className="p-3.5 rounded-xl border border-slate-200 bg-slate-50 flex flex-col justify-between">
+            <div>
+              <div className="flex items-center justify-between mb-1.5">
+                <span className="text-xs font-black text-slate-700">
+                  ค่าการยุบตัวชั่วคราว (C)
+                </span>
+                <span className="text-[10px] text-slate-400">Temp Comp.</span>
+              </div>
 
-            {last10InputMode === 'WHEEL' ? (
-              <DecimalRollingPicker
-                value={measuredTempC}
-                onChange={setMeasuredTempC}
-                min={0}
-                max={5}
-                unit="cm"
-                label="หมุนเลือกค่า C หน้างาน"
-              />
-            ) : (
-              <div className="relative">
+              <div className="relative mb-2">
                 <input
                   type="number"
                   step="0.1"
+                  min="0"
                   value={measuredTempC}
                   onChange={(e) => setMeasuredTempC(parseFloat(e.target.value) || 0)}
-                  className="w-full text-lg font-bold font-mono text-slate-800 bg-slate-50 border border-slate-300 rounded-lg px-3 py-2.5 focus:bg-white focus:ring-2 focus:ring-amber-500"
+                  className="w-full text-lg font-black font-mono text-slate-800 bg-white border border-slate-300 rounded-lg px-2.5 py-1.5 focus:ring-2 focus:ring-amber-500 pr-12"
                 />
-                <span className="absolute right-3 top-3 text-xs font-semibold text-slate-400">cm</span>
+                <span className="absolute right-2.5 top-2 text-[11px] font-semibold text-slate-400">
+                  cm
+                </span>
               </div>
-            )}
+            </div>
+
+            {/* Quick C Nudges */}
+            <div className="flex items-center gap-1">
+              <button
+                type="button"
+                onClick={() => setMeasuredTempC((prev) => Math.max(0, Number((prev - 0.1).toFixed(1))))}
+                className="flex-1 py-1 px-1.5 bg-white hover:bg-slate-100 text-slate-700 border border-slate-200 rounded text-[11px] font-bold transition shadow-2xs"
+                title="ลด 0.1 cm"
+              >
+                -0.1
+              </button>
+              <button
+                type="button"
+                onClick={() => setMeasuredTempC((prev) => Number((prev + 0.1).toFixed(1)))}
+                className="flex-1 py-1 px-1.5 bg-white hover:bg-slate-100 text-slate-700 border border-slate-200 rounded text-[11px] font-bold transition shadow-2xs"
+                title="เพิ่ม 0.1 cm"
+              >
+                +0.1
+              </button>
+              <button
+                type="button"
+                onClick={() => setMeasuredTempC(1.2)}
+                className="py-1 px-2 bg-amber-100 hover:bg-amber-200 text-amber-900 border border-amber-200 rounded text-[11px] font-bold transition shadow-2xs"
+                title="ค่ามาตรฐาน 1.2 cm"
+              >
+                1.2 cm
+              </button>
+            </div>
           </div>
         </div>
 
-        {/* Live Validation Banner */}
+        {/* Live Multi-Round Validation Banner */}
         <div className="pt-2">
           {!isEvaluated ? (
             <div className="p-4 bg-slate-100 rounded-xl text-xs text-slate-500 text-center font-medium">
-              หมุนเลือกค่า Last 10 Blows เพื่อตรวจสอบผลเทียบกับเกณฑ์ Hiley
+              กรอกระยะ Set ของชุดที่ 1, 2 และ 3 เพื่อตรวจสอบผลเทียบกับเกณฑ์ Hiley
             </div>
           ) : isPassed ? (
-            <div className="p-4 rounded-xl border bg-emerald-50 border-emerald-300 text-emerald-900 flex items-center justify-between">
-              <div className="flex items-center gap-3">
-                <CheckCircle2 className="w-6 h-6 text-emerald-600 flex-shrink-0" />
+            <div className="p-4 rounded-xl border bg-emerald-50 border-emerald-300 text-emerald-900 flex flex-col sm:flex-row sm:items-center justify-between gap-3 shadow-xs">
+              <div className="flex items-start sm:items-center gap-3">
+                <CheckCircle2 className="w-6 h-6 text-emerald-600 shrink-0 mt-0.5 sm:mt-0" />
                 <div>
-                  <div className="text-sm font-black">
-                    🟢 PASS: ได้ Set ผ่านเกณฑ์มาตรฐาน (Target &le; {targetSet.toFixed(2)} cm)
+                  <div className="text-sm font-black flex items-center gap-2 flex-wrap">
+                    <span>🟢 PASS: ได้ Set ผ่านเกณฑ์มาตรฐานครบทั้ง 3 ชุด</span>
+                    <span className="text-xs bg-emerald-200 text-emerald-900 px-2 py-0.5 rounded font-mono font-bold">
+                      Target &le; {targetSet.toFixed(2)} cm
+                    </span>
                   </div>
-                  <div className="text-xs text-emerald-700 mt-0.5 font-mono">
-                    ค่าที่วัดได้: <strong>{measuredLast10.toFixed(1)} cm / 10 blows</strong> (ปลอดภัยตามสเปกวิศวกรรม)
+                  <div className="text-xs text-emerald-800 mt-1 font-mono flex items-center gap-2 flex-wrap">
+                    <span>ชุดที่ 1: <strong>{last10Rounds[0]} cm</strong></span>
+                    <span>•</span>
+                    <span>ชุดที่ 2: <strong>{last10Rounds[1]} cm</strong></span>
+                    <span>•</span>
+                    <span>ชุดที่ 3: <strong>{last10Rounds[2]} cm</strong></span>
+                    <span>|</span>
+                    <span className="font-bold">ค่าเฉลี่ย: {avgMeasuredLast10.toFixed(2)} cm</span>
                   </div>
                 </div>
               </div>
-              <span className="text-xs font-black bg-emerald-600 text-white px-3 py-1.5 rounded-lg uppercase">
-                SET ACHIEVED
+              <span className="text-xs font-black bg-emerald-600 text-white px-3 py-1.5 rounded-lg uppercase self-start sm:self-auto shrink-0 shadow-2xs">
+                SET ACHIEVED (3/3 PASS)
               </span>
             </div>
           ) : (
-            <div className="p-4 rounded-xl border bg-rose-50 border-rose-300 text-rose-900 flex items-center justify-between">
-              <div className="flex items-center gap-3">
-                <XCircle className="w-6 h-6 text-rose-600 flex-shrink-0" />
+            <div className="p-4 rounded-xl border bg-rose-50 border-rose-300 text-rose-900 flex flex-col sm:flex-row sm:items-center justify-between gap-3 shadow-xs">
+              <div className="flex items-start sm:items-center gap-3">
+                <XCircle className="w-6 h-6 text-rose-600 shrink-0 mt-0.5 sm:mt-0" />
                 <div>
-                  <div className="text-sm font-black">
-                    🔴 RE-DRIVE: ยังไม่ได้ Set ตามเกณฑ์ (Target &le; {targetSet.toFixed(2)} cm)
+                  <div className="text-sm font-black flex items-center gap-2 flex-wrap">
+                    <span>🔴 RE-DRIVE: ยังไม่ผ่านเกณฑ์มาตรฐาน</span>
+                    <span className="text-xs bg-rose-200 text-rose-900 px-2 py-0.5 rounded font-mono font-bold">
+                      (ต้องผ่าน &le; {targetSet.toFixed(2)} cm ครบทั้ง 3 ชุด)
+                    </span>
                   </div>
-                  <div className="text-xs text-rose-700 mt-0.5 font-mono">
-                    ค่าที่วัดได้: <strong>{measuredLast10.toFixed(1)} cm</strong> เกินเกณฑ์ยอมรับได้
+                  <div className="text-xs text-rose-800 mt-1 font-mono flex items-center gap-2 flex-wrap">
+                    <span>ชุดที่ 1: <strong className={last10Rounds[0] && last10Rounds[0] > targetSet ? 'text-rose-600 underline' : ''}>{last10Rounds[0] ?? '-'} cm</strong></span>
+                    <span>•</span>
+                    <span>ชุดที่ 2: <strong className={last10Rounds[1] && last10Rounds[1] > targetSet ? 'text-rose-600 underline' : ''}>{last10Rounds[1] ?? '-'} cm</strong></span>
+                    <span>•</span>
+                    <span>ชุดที่ 3: <strong className={last10Rounds[2] && last10Rounds[2] > targetSet ? 'text-rose-600 underline' : ''}>{last10Rounds[2] ?? '-'} cm</strong></span>
+                    <span>|</span>
+                    <span>ค่าเฉลี่ย: {avgMeasuredLast10.toFixed(2)} cm</span>
                   </div>
                 </div>
               </div>
-              <span className="text-xs font-black bg-rose-600 text-white px-3 py-1.5 rounded-lg uppercase">
+              <span className="text-xs font-black bg-rose-600 text-white px-3 py-1.5 rounded-lg uppercase self-start sm:self-auto shrink-0 shadow-2xs">
                 RE-DRIVE REQUIRED
               </span>
             </div>
@@ -844,7 +1026,7 @@ export default function DrivingRecordForm({ pile }: { pile: PileData }) {
                   </label>
                   {isWindowScope && (
                     <span className="text-[10px] text-slate-400 font-mono">
-                      ({windowLength} - {drivenStepsCount} {recordUnit === 'FEET' ? 'ft' : 'm'})
+                      ({windowLength} - {validDrivenStepsCount} {recordUnit === 'FEET' ? 'ft' : 'm'})
                     </span>
                   )}
                 </div>

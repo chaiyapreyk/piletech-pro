@@ -582,20 +582,27 @@ export default function PileLoadProfileChart({
             </div>
           </div>
 
-          {/* Chart 2: Estimated Ultimate Load Profile (Ru) */}
+          {/* Chart 2: Estimated Ultimate Load Profile (Ru) & Actual Safe Load (Ra) */}
           <div className="bg-white rounded-2xl border border-slate-200 p-4 shadow-xs flex flex-col justify-between">
             <div>
               <div className="flex items-center justify-between mb-2">
                 <div className="flex items-center gap-2">
                   <span className="w-2.5 h-2.5 rounded-full bg-indigo-600"></span>
                   <span className="text-xs font-black text-slate-800">
-                    2. Estimated Ultimate Load Profile (Ru, tonnes)
+                    2. Estimated Load Profile ($R_u$ & Actual $R_a$)
                   </span>
                 </div>
                 {hasValidLoadPoints && (
-                  <span className="text-[10px] text-indigo-600 font-mono font-bold">
-                    Max: {maxLoadT} t
-                  </span>
+                  <div className="flex items-center gap-2 text-[10px] font-mono font-bold">
+                    <span className="text-indigo-600">
+                      Max Ru: {maxLoadT}t
+                    </span>
+                    {criteriaSummary && (
+                      <span className="text-emerald-700 bg-emerald-50 px-1.5 py-0.5 rounded border border-emerald-200">
+                        Max Ra: {(maxLoadT / (criteriaSummary.safetyFactor || 2.5)).toFixed(1)}t
+                      </span>
+                    )}
+                  </div>
                 )}
               </div>
 
@@ -829,11 +836,15 @@ export default function PileLoadProfileChart({
                           </text>
                         )}
 
-                        {/* Inline Ru Badge directly on the chart */}
+                        {/* Inline Ru & Ra Badge directly on the chart */}
                         {hoveredPoint.estimatedUltimateLoadT !== null ? (() => {
                           const loadX = getLoadX(hoveredPoint.estimatedUltimateLoadT);
                           const y = getYFromIndex(hoveredIndex);
-                          const pillW = 88;
+                          const hasRa = hoveredPoint.estimatedSafeWorkingLoadT !== null;
+                          const pillText = hasRa
+                            ? `Ru: ${hoveredPoint.estimatedUltimateLoadT}t · Ra: ${hoveredPoint.estimatedSafeWorkingLoadT}t`
+                            : `Ru: ${hoveredPoint.estimatedUltimateLoadT} t`;
+                          const pillW = hasRa ? 134 : 88;
                           const pillH = 22;
                           const isNearRight = loadX + pillW + 12 > marginLeft + plotWidth;
                           const pillX = isNearRight ? loadX - pillW - 8 : loadX + 8;
@@ -860,7 +871,7 @@ export default function PileLoadProfileChart({
                                 strokeWidth={2}
                               />
 
-                              {/* Floating Ru Callout Pill */}
+                              {/* Floating Ru & Ra Callout Pill */}
                               <rect
                                 x={pillX}
                                 y={pillY}
@@ -875,12 +886,12 @@ export default function PileLoadProfileChart({
                                 x={pillX + pillW / 2}
                                 y={pillY + 14.5}
                                 fill="#ffffff"
-                                fontSize={10}
+                                fontSize={9.5}
                                 fontWeight="bold"
                                 textAnchor="middle"
                                 fontFamily="monospace"
                               >
-                                Ru: {hoveredPoint.estimatedUltimateLoadT} t
+                                {pillText}
                               </text>
                             </g>
                           );
