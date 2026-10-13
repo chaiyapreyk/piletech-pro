@@ -233,7 +233,7 @@ export default function ExcelBlowTableView({
               const ratio = offsetX / rect.width;
               const calculated = Math.round(ratio * maxScale);
               const clamped = clampEqualizerBlowValue(Math.max(0, Math.min(100, calculated)));
-              const nextVal = clamped <= 0 ? null : clamped;
+              const nextVal = clamped === null || clamped <= 0 ? null : clamped;
               onChange(updateDrivingInterval(blowCounts, idx, nextVal));
             };
 
